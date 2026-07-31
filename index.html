@@ -1,0 +1,2626 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f8ff" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="小課表" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./app-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+  <title>小課表｜老師排課與堂數紀錄</title>
+  <style>
+:root {
+  --blue: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-50: #eff6ff;
+  --ink: #172033;
+  --muted: #667085;
+  --line: #e7ecf4;
+  --bg: #f5f8ff;
+  --card: #ffffff;
+  --green: #15803d;
+  --green-bg: #eaf8ef;
+  --orange: #b45309;
+  --orange-bg: #fff4df;
+  --red: #b42318;
+  --red-bg: #feeceb;
+  --gray-bg: #f2f4f7;
+  --shadow: 0 12px 32px rgba(26, 57, 102, .08);
+  --radius: 20px;
+}
+
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "PingFang TC", sans-serif;
+}
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+
+.app-shell {
+  width: min(100%, 480px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: linear-gradient(180deg, #f8fbff 0%, var(--bg) 36%);
+  padding: max(18px, env(safe-area-inset-top)) 16px calc(106px + env(safe-area-inset-bottom));
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  color: white;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, .25);
+}
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 14px;
+  background: white;
+  color: var(--ink);
+  box-shadow: 0 6px 18px rgba(24, 54, 95, .06);
+}
+
+.hero { margin-bottom: 18px; }
+.hero h1 { margin: 0 0 6px; font-size: 28px; line-height: 1.2; }
+.hero p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 18px 0 22px;
+}
+.summary-card {
+  background: var(--card);
+  border: 1px solid rgba(231, 236, 244, .9);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.summary-card .eyebrow { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.summary-card strong { font-size: 28px; color: var(--blue); }
+.summary-card span { margin-left: 4px; color: var(--muted); font-size: 13px; }
+
+.section { margin-top: 20px; }
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 12px;
+}
+.section-heading h2 { margin: 0; font-size: 20px; }
+.section-heading .subtle { color: var(--muted); font-size: 13px; }
+
+.card-list { display: grid; gap: 12px; }
+.lesson-card, .student-card, .record-card, .settings-card, .empty-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.lesson-card { padding: 16px; }
+.lesson-top {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.time-block strong { color: var(--blue); font-size: 19px; display: block; }
+.time-block span { color: var(--muted); font-size: 13px; }
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--blue-50);
+  color: var(--blue-700);
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+.lesson-person { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.lesson-person h3, .student-card h3 { margin: 0 0 4px; font-size: 17px; }
+.lesson-meta { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lesson-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+.btn {
+  min-height: 44px;
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 16px;
+  font-weight: 700;
+  transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.btn:active { transform: scale(.98); }
+.btn-primary { background: var(--blue); color: white; box-shadow: 0 8px 18px rgba(37, 99, 235, .2); }
+.btn-primary:hover { background: var(--blue-700); }
+.btn-soft { background: var(--blue-50); color: var(--blue-700); }
+.btn-ghost { background: transparent; color: var(--blue); }
+.btn-danger { background: var(--red-bg); color: var(--red); }
+.btn-full { width: 100%; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.status-scheduled { background: var(--blue-50); color: var(--blue-700); }
+.status-inProgress, .status-completed { background: var(--green-bg); color: var(--green); }
+.status-studentLeave, .status-teacherLeave, .status-absent, .status-rescheduled { background: var(--orange-bg); color: var(--orange); }
+.status-cancelled { background: var(--gray-bg); color: #667085; }
+
+.fab-row { margin-top: 18px; }
+
+.bottom-nav {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(100%, 480px);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(255,255,255,.94);
+  backdrop-filter: blur(18px);
+  border-top: 1px solid var(--line);
+  z-index: 50;
+}
+.nav-btn {
+  border: 0;
+  background: transparent;
+  min-height: 58px;
+  border-radius: 16px;
+  color: #7c8799;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.nav-btn .nav-icon { font-size: 21px; }
+.nav-btn.active { color: var(--blue); background: var(--blue-50); font-weight: 800; }
+
+.page-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 18px; }
+.page-title-row h1 { margin: 0; font-size: 26px; }
+
+.week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.day-chip {
+  border: 0;
+  border-radius: 14px;
+  background: white;
+  padding: 9px 4px;
+  color: var(--muted);
+  min-height: 58px;
+  border: 1px solid var(--line);
+}
+.day-chip strong { display: block; color: var(--ink); margin-top: 3px; }
+.day-chip.active { background: var(--blue); color: #dbeafe; border-color: var(--blue); }
+.day-chip.active strong { color: white; }
+.date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.date-nav .date-label { font-weight: 800; }
+.mini-btn { min-height: 38px; border: 1px solid var(--line); background: white; border-radius: 12px; padding: 7px 12px; }
+
+.search-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.search-row input { flex: 1; }
+.input, input, select, textarea {
+  width: 100%;
+  border: 1px solid #d8e0ec;
+  border-radius: 14px;
+  min-height: 46px;
+  padding: 11px 13px;
+  background: white;
+  color: var(--ink);
+  outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, .10); }
+textarea { min-height: 96px; resize: vertical; }
+
+.student-card { padding: 16px; }
+.student-card button.card-hit {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+}
+.student-head { display: flex; align-items: center; gap: 11px; }
+.student-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.stat-box { background: #f8fafc; border-radius: 14px; padding: 11px 12px; }
+.stat-box small { display: block; color: var(--muted); margin-bottom: 4px; }
+.stat-box strong { font-size: 18px; }
+.warning { color: var(--orange); font-size: 12px; font-weight: 800; margin-top: 8px; }
+
+.empty-card { padding: 28px 18px; text-align: center; }
+.empty-icon { font-size: 34px; margin-bottom: 10px; }
+.empty-card h3 { margin: 0 0 8px; }
+.empty-card p { color: var(--muted); margin: 0 0 16px; line-height: 1.6; }
+
+.detail-hero { padding: 18px; background: white; border-radius: 20px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.detail-title { display: flex; gap: 12px; align-items: center; }
+.detail-title .avatar { width: 54px; height: 54px; }
+.detail-title h1 { font-size: 24px; margin: 0 0 4px; }
+.detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.info-cell { padding: 13px; background: #f8fafc; border-radius: 14px; }
+.info-cell small { display: block; color: var(--muted); margin-bottom: 5px; }
+.info-cell strong { font-size: 16px; }
+
+.record-card { padding: 14px 15px; }
+.record-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.record-card h3 { margin: 0 0 4px; font-size: 16px; }
+.record-card p { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+.settings-card { padding: 6px 16px; }
+.settings-item {
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+}
+.settings-item:last-child { border-bottom: 0; }
+.settings-item small { color: var(--muted); }
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .45);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 18px 0 0;
+}
+.sheet {
+  width: min(100%, 480px);
+  max-height: 92dvh;
+  overflow: auto;
+  background: white;
+  border-radius: 26px 26px 0 0;
+  padding: 12px 18px calc(24px + env(safe-area-inset-bottom));
+  box-shadow: 0 -18px 50px rgba(15, 23, 42, .18);
+}
+.sheet-handle { width: 42px; height: 5px; background: #d6dce7; border-radius: 99px; margin: 2px auto 16px; }
+.sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.sheet-header h2 { margin: 0; font-size: 22px; }
+.close-btn { width: 40px; height: 40px; border: 0; background: var(--gray-bg); border-radius: 12px; }
+.form-grid { display: grid; gap: 14px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field label { display: block; font-size: 13px; font-weight: 800; margin-bottom: 7px; }
+.field .help { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.45; }
+.form-error { color: var(--red); font-size: 12px; margin-top: 6px; }
+.segmented { display: grid; grid-template-columns: repeat(2, 1fr); background: #f3f5f9; padding: 4px; border-radius: 14px; gap: 4px; }
+.segmented label { margin: 0; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span { display: block; text-align: center; padding: 10px; border-radius: 11px; color: var(--muted); font-weight: 700; }
+.segmented input:checked + span { background: white; color: var(--blue); box-shadow: 0 3px 10px rgba(15, 23, 42, .08); }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; border-radius: 14px; padding: 12px; }
+.toggle { position: relative; width: 50px; height: 30px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 999px; transition: .2s; }
+.slider::before { content: ""; position: absolute; width: 24px; height: 24px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .2s; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+.toggle input:checked + .slider { background: var(--blue); }
+.toggle input:checked + .slider::before { transform: translateX(20px); }
+.status-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.status-option input { position: absolute; opacity: 0; }
+.status-option span { display: block; border: 1px solid var(--line); border-radius: 14px; padding: 11px; text-align: center; color: var(--muted); font-weight: 700; }
+.status-option input:checked + span { border-color: var(--blue); background: var(--blue-50); color: var(--blue); }
+.sheet-footer { position: sticky; bottom: -24px; background: white; padding-top: 14px; margin-top: 8px; }
+
+.toast-root { position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 200; width: min(calc(100% - 32px), 440px); pointer-events: none; }
+.toast { background: #172033; color: white; border-radius: 14px; padding: 12px 14px; box-shadow: 0 14px 34px rgba(15, 23, 42, .25); animation: toastIn .2s ease; }
+.toast.error { background: var(--red); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.file-input { display: none; }
+.version { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }
+.back-btn { border: 0; background: white; border-radius: 13px; width: 42px; height: 42px; box-shadow: 0 5px 16px rgba(24,54,95,.06); }
+
+
+/* v0.2：高密度快速操作模式 */
+.app-shell { padding-left: 12px; padding-right: 12px; }
+.topbar { margin-bottom: 14px; }
+.hero { margin-bottom: 10px; }
+.hero h1 { font-size: 24px; margin-bottom: 4px; }
+.hero p { font-size: 13px; }
+.summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 11px 14px;
+  box-shadow: 0 7px 20px rgba(26,57,102,.055);
+  margin: 12px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.summary-bar strong { color: var(--blue); font-size: 19px; margin: 0 2px; }
+.summary-divider { width: 1px; align-self: stretch; background: var(--line); }
+.section { margin-top: 14px; }
+.section-heading { margin-bottom: 8px; }
+.section-heading h2 { font-size: 18px; }
+.card-list { gap: 8px; }
+.lesson-card {
+  padding: 10px 11px;
+  border-radius: 16px;
+  box-shadow: 0 7px 20px rgba(26,57,102,.055);
+}
+.lesson-top {
+  grid-template-columns: 55px minmax(0, 1fr) auto;
+  gap: 9px;
+  min-height: 48px;
+}
+.time-block strong { font-size: 17px; line-height: 1.1; }
+.time-block span { font-size: 11px; }
+.lesson-card .avatar { display: none; }
+.lesson-person { gap: 0; }
+.lesson-person h3 { margin: 0 0 2px; font-size: 15.5px; line-height: 1.25; }
+.lesson-meta {
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lesson-control { display: flex; align-items: center; gap: 5px; }
+.quick-action {
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.quick-action.primary { background: var(--blue); color: white; }
+.quick-action.soft { background: var(--blue-50); color: var(--blue-700); }
+.quick-action.done { background: var(--green-bg); color: var(--green); }
+.quick-action.warn { background: var(--orange-bg); color: var(--orange); }
+.quick-action.muted { background: var(--gray-bg); color: var(--muted); }
+.lesson-menu-btn {
+  width: 36px;
+  min-width: 36px;
+  height: 38px;
+  border: 0;
+  border-radius: 12px;
+  background: #f5f7fb;
+  color: var(--muted);
+  font-weight: 900;
+  font-size: 18px;
+  line-height: 1;
+}
+.lesson-actions { display: none; }
+.fab-row { margin-top: 12px; }
+.btn-full { min-height: 46px; }
+.quick-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.quick-chip {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.compact-help { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+
+
+/* v0.3：固定排課、最近學生與快速複製 */
+.recent-student-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 1px 4px;
+  scrollbar-width: none;
+}
+.recent-student-row::-webkit-scrollbar { display: none; }
+.recent-student-chip {
+  min-width: max-content;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: white;
+  color: var(--ink);
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 750;
+}
+.recent-student-chip.active {
+  border-color: #93b4ff;
+  background: var(--blue-50);
+  color: var(--blue-700);
+}
+.copy-template {
+  border: 1px dashed #b8c8e8;
+  background: #f7faff;
+  border-radius: 14px;
+  padding: 10px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.copy-template-text { min-width: 0; }
+.copy-template-text strong { display: block; font-size: 13px; margin-bottom: 2px; }
+.copy-template-text span {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.copy-template button { min-height: 36px; padding: 7px 10px; flex: 0 0 auto; }
+.repeat-panel {
+  display: none;
+  border: 1px solid #dce6fa;
+  background: #f8fbff;
+  border-radius: 16px;
+  padding: 12px;
+  gap: 12px;
+}
+.repeat-panel.open { display: grid; }
+.weekday-options {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+.weekday-option input { position: absolute; opacity: 0; pointer-events: none; }
+.weekday-option span {
+  min-height: 37px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: white;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.weekday-option input:checked + span {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: white;
+}
+.repeat-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.repeat-preset {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--muted);
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 750;
+}
+.repeat-preset.active { background: var(--blue-50); border-color: #aac2f8; color: var(--blue-700); }
+.repeat-summary {
+  border-radius: 12px;
+  background: white;
+  border: 1px solid var(--line);
+  padding: 9px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.repeat-summary strong { color: var(--ink); }
+.inline-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.inline-check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--blue); }
+.lesson-control .quick-action.copy { background: #f4f6fa; color: #526173; }
+.lesson-control { flex-wrap: nowrap; }
+
+/* v0.4：課表週視圖與月視圖 */
+.calendar-page { min-width: 0; }
+.calendar-view-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  background: #edf1f7;
+}
+.calendar-view-btn {
+  min-height: 42px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+.calendar-view-btn.active {
+  background: white;
+  color: var(--blue);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, .08);
+}
+.calendar-toolbar {
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.calendar-toolbar .mini-btn {
+  width: 42px;
+  padding: 7px;
+  font-size: 18px;
+}
+.calendar-period {
+  min-width: 0;
+  text-align: center;
+}
+.calendar-period strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-today-btn {
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+}
+.week-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+  box-shadow: var(--shadow);
+}
+.week-canvas {
+  --week-hour-height: 64px;
+  display: grid;
+  grid-template-columns: 36px repeat(7, minmax(0, 1fr));
+  grid-template-rows: 54px auto;
+  width: 100%;
+  min-width: 100%;
+  position: relative;
+}
+.week-corner {
+  z-index: 8;
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: white;
+}
+.week-day-head {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: white;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+.week-day-head strong {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: 11px;
+}
+.week-day-head.today { background: #f5f9ff; color: var(--blue); }
+.week-day-head.today strong { background: var(--blue); color: white; }
+.week-time-axis {
+  position: relative;
+  z-index: 7;
+  grid-column: 1;
+  grid-row: 2;
+  height: calc(15 * var(--week-hour-height));
+  border-right: 1px solid var(--line);
+  background: white;
+}
+.week-time-label {
+  position: absolute;
+  right: 3px;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.week-time-label:first-child {
+  top: 7px !important;
+  transform: none;
+}
+.week-day-column {
+  position: relative;
+  grid-row: 2;
+  height: calc(15 * var(--week-hour-height));
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  background-color: white;
+  background-image:
+    repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(226, 232, 240, .55) 31px, rgba(226, 232, 240, .55) 32px),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 63px, #d8e1ee 63px, #d8e1ee 64px);
+}
+.week-day-column.today { background-color: #f5f9ff; }
+.week-slot {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  width: 100%;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+}
+.week-slot:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--blue);
+  outline-offset: -3px;
+  background: rgba(37, 99, 235, .07);
+}
+.week-event {
+  position: absolute;
+  z-index: 4;
+  left: 1px;
+  right: 1px;
+  min-height: 24px;
+  overflow: hidden;
+  border: 0;
+  border-left: 2px solid #5b8def;
+  border-radius: 5px;
+  background: #dfeaff;
+  padding: 3px 2px;
+  color: #23416f;
+  text-align: left;
+  box-shadow: 0 3px 9px rgba(37, 99, 235, .10);
+}
+.week-event-time,
+.week-event-name,
+.week-event-subject {
+  display: block;
+  overflow: hidden;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.week-event-time { font-size: 7.5px; font-weight: 850; }
+.week-event-name { margin-top: 2px; font-size: 8.5px; font-weight: 850; }
+.week-event-subject { display: none; margin-top: 1px; font-size: 8px; }
+.week-event.has-overlap::after {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  display: grid;
+  width: 10px;
+  height: 10px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--red);
+  color: white;
+  content: "!";
+  font-size: 7px;
+  font-weight: 900;
+}
+.calendar-color-0 { --event-strong: #4f7fe5; --event-soft: #dfeaff; --event-ink: #23416f; }
+.calendar-color-1 { --event-strong: #38a169; --event-soft: #dff4e7; --event-ink: #23613d; }
+.calendar-color-2 { --event-strong: #8b6bd6; --event-soft: #ece5fb; --event-ink: #553b87; }
+.calendar-color-3 { --event-strong: #d9912b; --event-soft: #fff0d6; --event-ink: #7a4b0e; }
+.calendar-color-4 { --event-strong: #d76483; --event-soft: #fbe3ea; --event-ink: #7e3348; }
+.calendar-color-5 { --event-strong: #2f9aa0; --event-soft: #dcf2f3; --event-ink: #235d61; }
+.week-event[class*="calendar-color-"] {
+  border-left-color: var(--event-strong);
+  background: var(--event-soft);
+  color: var(--event-ink);
+}
+.week-event.cancelled {
+  border-left-color: #98a2b3;
+  background: #eef0f3;
+  color: #667085;
+  opacity: .78;
+  text-decoration: line-through;
+}
+.now-line {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #ef4444;
+  pointer-events: none;
+}
+.now-line::before {
+  position: absolute;
+  top: -3px;
+  left: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  content: "";
+}
+.calendar-hint {
+  margin: 9px 3px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.month-weekdays,
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.month-weekdays {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+.month-weekdays span { padding: 7px 0; }
+.month-grid {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+  box-shadow: var(--shadow);
+}
+.month-day {
+  position: relative;
+  min-width: 0;
+  min-height: 62px;
+  border: 0;
+  border-right: 1px solid #edf1f6;
+  border-bottom: 1px solid #edf1f6;
+  background: white;
+  padding: 6px 3px 5px;
+  color: var(--ink);
+}
+.month-day:nth-child(7n) { border-right: 0; }
+.month-day:nth-last-child(-n+7) { border-bottom: 0; }
+.month-day.other-month { color: #a5adba; background: #fbfcfe; }
+.month-day.selected {
+  z-index: 1;
+  outline: 2px solid #8bb0ff;
+  outline-offset: -2px;
+  background: var(--blue-50);
+}
+.month-day-number {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  margin: 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 750;
+}
+.month-day.today .month-day-number {
+  border: 1px solid var(--blue);
+  color: var(--blue);
+  font-weight: 900;
+}
+.month-day.selected .month-day-number {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: white;
+}
+.month-markers {
+  display: flex;
+  min-height: 15px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+.month-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--event-strong, var(--blue));
+}
+.month-more {
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.day-agenda {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.day-agenda-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 2px 10px;
+}
+.day-agenda-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.day-agenda-heading span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.calendar-list {
+  display: grid;
+  gap: 8px;
+}
+.calendar-list-item {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr) auto;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 66px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--event-strong, var(--blue));
+  border-radius: 15px;
+  background: white;
+  padding: 9px 9px 9px 10px;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: 0 6px 16px rgba(26, 57, 102, .05);
+}
+.calendar-list-item.cancelled {
+  border-left-color: #98a2b3;
+  background: #f8f9fb;
+  opacity: .8;
+}
+.calendar-list-time strong { display: block; color: var(--blue); font-size: 14px; }
+.calendar-list-time span { color: var(--muted); font-size: 10px; }
+.calendar-list-info { min-width: 0; }
+.calendar-list-info strong,
+.calendar-list-info span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-list-info strong { font-size: 14px; }
+.calendar-list-info span { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.calendar-list-item .status {
+  min-height: 28px;
+  padding: 5px 7px;
+  font-size: 10px;
+}
+.agenda-empty {
+  border: 1px dashed #cfd9e8;
+  border-radius: 16px;
+  padding: 20px 14px;
+  background: white;
+  color: var(--muted);
+  text-align: center;
+}
+.agenda-empty p { margin: 0 0 12px; font-size: 13px; }
+
+.segmented.segmented-3 { grid-template-columns: repeat(3, 1fr); }
+.teacher-subject-help { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.conflict-panel {
+  display: none;
+  border: 1px solid #f0aaa5;
+  border-radius: 14px;
+  background: #fff5f4;
+  padding: 11px;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.conflict-panel.visible { display: block; }
+.conflict-panel strong { display: block; margin-bottom: 7px; font-size: 13px; }
+.conflict-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.conflict-item { border-top: 1px solid #f7cbc8; padding-top: 7px; }
+.conflict-item:first-child { border-top: 0; padding-top: 0; }
+.conflict-item span { display: block; }
+.repeat-plan-details { margin-top: 8px; color: var(--muted); }
+.repeat-plan-details summary { color: var(--blue); cursor: pointer; font-weight: 800; }
+.repeat-plan-dates { margin-top: 6px; font-size: 11px; line-height: 1.55; }
+.partial-choice {
+  display: none;
+  border: 1px solid #f3c37b;
+  border-radius: 14px;
+  background: #fffaf0;
+  padding: 11px;
+}
+.partial-choice.visible { display: block; }
+.partial-choice p { margin: 0 0 8px; color: var(--orange); font-size: 12px; line-height: 1.5; }
+.export-note { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 10px 2px 0; }
+
+@media (min-width: 560px) {
+  .week-canvas { grid-template-columns: 42px repeat(7, minmax(0, 1fr)); }
+  .week-day-head { font-size: 11px; }
+  .week-day-head strong { width: 28px; height: 28px; font-size: 13px; }
+  .week-event { left: 3px; right: 3px; padding: 4px; border-radius: 7px; }
+  .week-event-time { font-size: 9px; }
+  .week-event-name { font-size: 10px; }
+  .week-event-subject { display: block; font-size: 9px; }
+}
+
+@media (max-width: 370px) {
+  .lesson-control .quick-action { padding-left: 8px; padding-right: 8px; }
+  .lesson-top { grid-template-columns: 52px minmax(0,1fr) auto; gap: 7px; }
+  .calendar-list-item { grid-template-columns: 60px minmax(0, 1fr) auto; gap: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}
+
+</style>
+</head>
+<body>
+  <div id="app" class="app-shell" aria-live="polite"></div>
+  <div id="overlay-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
+  <script>
+(() => {
+  "use strict";
+
+  const STORAGE_KEY = "xiaokebiao_mvp_v1";
+  const CALENDAR_VIEW_KEY = "xiaokebiao_calendar_view_v1";
+  const APP_VERSION = "0.6.0";
+  const WEEK_START_HOUR = 8;
+  const WEEK_END_HOUR = 23;
+  const WEEK_HOUR_HEIGHT = 64;
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+  const STATUS_LABELS = {
+    scheduled: "尚未開始",
+    inProgress: "上課中",
+    completed: "已完成",
+    studentLeave: "學生請假",
+    teacherLeave: "老師請假",
+    absent: "缺席",
+    cancelled: "已取消",
+    rescheduled: "已改期",
+  };
+
+  const DEFAULT_DEDUCT = {
+    completed: true,
+    studentLeave: true,
+    teacherLeave: false,
+    absent: true,
+    cancelled: false,
+    rescheduled: false,
+  };
+
+  let invalidStoredData = null;
+  let state = loadData();
+  let ui = createUIState();
+  let deferredInstallPrompt = null;
+
+  function createUIState() {
+    return {
+      tab: "home",
+      selectedDate: todayISO(),
+      search: "",
+      studentDetailId: null,
+      calendarView: loadCalendarView(),
+    };
+  }
+
+  function loadCalendarView() {
+    try {
+      const view = localStorage.getItem(CALENDAR_VIEW_KEY);
+      return view === "month" ? "month" : "week";
+    } catch (err) {
+      console.warn("讀取日曆檢視設定失敗", err);
+      return "week";
+    }
+  }
+
+  function saveCalendarView(view) {
+    try {
+      localStorage.setItem(CALENDAR_VIEW_KEY, view);
+    } catch (err) {
+      console.warn("儲存日曆檢視設定失敗", err);
+    }
+  }
+
+  function uid(prefix = "id") {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function parseISODate(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function dateToISO(d) {
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function addDays(iso, amount) {
+    const d = parseISODate(iso);
+    d.setDate(d.getDate() + amount);
+    return dateToISO(d);
+  }
+
+  function formatDate(iso, withWeek = true) {
+    const d = parseISODate(iso);
+    const base = new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    if (!withWeek) return base;
+    const week = new Intl.DateTimeFormat("zh-TW", { weekday: "short" }).format(d);
+    return `${base}（${week}）`;
+  }
+
+  function formatShortDate(iso) {
+    const d = parseISODate(iso);
+    return new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", weekday: "short" }).format(d);
+  }
+
+  function greeting() {
+    const h = new Date().getHours();
+    if (h < 11) return "早安";
+    if (h < 18) return "午安";
+    return "晚安";
+  }
+
+  function defaultTeacherProfile() {
+    return {
+      name: "林老師",
+      phone: "",
+      email: "",
+      lineId: "",
+      subjects: [],
+      defaultLessonMode: "",
+      defaultLocation: "",
+      defaultDuration: 60,
+      note: "",
+      updatedAt: "",
+    };
+  }
+
+  function normalizeTeacherProfile(profile) {
+    const defaults = defaultTeacherProfile();
+    const source = profile && typeof profile === "object" ? profile : {};
+    const duration = Number(source.defaultDuration);
+    const subjects = Array.isArray(source.subjects)
+      ? source.subjects
+      : typeof source.subjects === "string"
+        ? source.subjects.split(/[,，、\n]/)
+        : [];
+    return {
+      ...defaults,
+      name: String(source.name || defaults.name).trim() || defaults.name,
+      phone: String(source.phone || "").trim(),
+      email: String(source.email || "").trim(),
+      lineId: String(source.lineId || "").trim(),
+      subjects: [...new Set(subjects.map(item => String(item).trim()).filter(Boolean))],
+      defaultLessonMode: ["inPerson", "online"].includes(source.defaultLessonMode) ? source.defaultLessonMode : "",
+      defaultLocation: String(source.defaultLocation || "").trim(),
+      defaultDuration: [30, 45, 60, 90, 120].includes(duration) ? duration : 60,
+      note: String(source.note || "").trim(),
+      updatedAt: String(source.updatedAt || ""),
+    };
+  }
+
+  function createDemoData() {
+    const now = new Date().toISOString();
+    const today = todayISO();
+    const students = [
+      { id: "stu_wang", name: "王小明", subject: "數學", phone: "0912-345-678", contactNote: "以 LINE 聯絡家長", billingType: "package", totalLessons: 10, usedLessons: 4, pricePerLesson: 800, defaultDuration: 60, notes: "國二，複習進度需放慢", createdAt: now, updatedAt: now },
+      { id: "stu_chen", name: "陳小安", subject: "英文", phone: "", contactNote: "週末前確認教材", billingType: "package", totalLessons: 20, usedLessons: 18, pricePerLesson: 700, defaultDuration: 60, notes: "準備英檢初級", createdAt: now, updatedAt: now },
+      { id: "stu_li", name: "李雨晴", subject: "鋼琴", phone: "0988-222-123", contactNote: "可傳訊息給本人", billingType: "perLesson", totalLessons: null, usedLessons: 0, pricePerLesson: 1000, defaultDuration: 60, notes: "成人初學", createdAt: now, updatedAt: now },
+      { id: "stu_zhang", name: "張子維", subject: "國文", phone: "", contactNote: "", billingType: "package", totalLessons: 8, usedLessons: 2, pricePerLesson: 750, defaultDuration: 60, notes: "作文為主", createdAt: now, updatedAt: now },
+    ];
+
+    const completedLessonId = "lesson_demo_completed";
+    const recordId = "record_demo_completed";
+    const lessons = [
+      { id: "lesson_demo_1", studentId: "stu_wang", subject: "數學", date: today, startTime: "09:30", endTime: "10:30", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "二次函數", createdAt: now, updatedAt: now },
+      { id: "lesson_demo_2", studentId: "stu_chen", subject: "英文", date: today, startTime: "13:00", endTime: "14:00", mode: "online", location: "Google Meet", recurrenceGroupId: null, status: "inProgress", startedAt: now, recordId: null, notes: "閱讀理解", createdAt: now, updatedAt: now },
+      { id: completedLessonId, studentId: "stu_li", subject: "鋼琴", date: today, startTime: "16:30", endTime: "17:30", mode: "inPerson", location: "琴房", recurrenceGroupId: null, status: "completed", startedAt: now, recordId, notes: "音階與節奏", createdAt: now, updatedAt: now },
+      { id: "lesson_demo_4", studentId: "stu_zhang", subject: "國文", date: addDays(today, 1), startTime: "10:00", endTime: "11:00", mode: "online", location: "Zoom", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "作文架構", createdAt: now, updatedAt: now },
+      { id: "lesson_demo_5", studentId: "stu_wang", subject: "數學", date: addDays(today, 3), startTime: "14:00", endTime: "15:00", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "", createdAt: now, updatedAt: now },
+    ];
+
+    const lessonRecords = [
+      { id: recordId, lessonId: completedLessonId, studentId: "stu_li", status: "completed", deductLesson: false, note: "今天節奏感進步，回家練 C 大調。", recordedAt: now, updatedAt: now },
+    ];
+
+    return { teacherProfile: defaultTeacherProfile(), students, lessons, lessonRecords, version: APP_VERSION };
+  }
+
+  function validateImportedData(data) {
+    if (!data || typeof data !== "object") return false;
+    if (!Array.isArray(data.students) || !Array.isArray(data.lessons) || !Array.isArray(data.lessonRecords)) return false;
+    const studentOk = data.students.every(s => s && typeof s.id === "string" && typeof s.name === "string" && typeof s.subject === "string" && ["package", "perLesson"].includes(s.billingType));
+    const lessonOk = data.lessons.every(l => l && typeof l.id === "string" && typeof l.studentId === "string" && typeof l.date === "string" && typeof l.startTime === "string" && typeof l.endTime === "string" && STATUS_LABELS[l.status]);
+    const recordOk = data.lessonRecords.every(r => r && typeof r.id === "string" && typeof r.lessonId === "string" && typeof r.studentId === "string" && typeof r.deductLesson === "boolean");
+    const teacherOk = data.teacherProfile && typeof data.teacherProfile.name === "string" && Array.isArray(data.teacherProfile.subjects);
+    return studentOk && lessonOk && recordOk && teacherOk;
+  }
+
+  function normalizeStoredData(data) {
+    if (!data || typeof data !== "object" || !Array.isArray(data.students) || !Array.isArray(data.lessons)) return null;
+    const students = data.students.map(student => {
+      if (!student || typeof student !== "object") return student;
+      const billingType = student.billingType === "perLesson" ? "perLesson" : "package";
+      const usedLessons = Number.isFinite(Number(student.usedLessons)) ? Math.max(0, Number(student.usedLessons)) : 0;
+      const defaultDuration = Number.isFinite(Number(student.defaultDuration)) ? Number(student.defaultDuration) : 60;
+      return {
+        ...student,
+        name: String(student.name || ""),
+        subject: String(student.subject || ""),
+        billingType,
+        totalLessons: billingType === "perLesson" ? null : (student.totalLessons ?? null),
+        usedLessons,
+        defaultDuration,
+      };
+    });
+    const studentMap = new Map(students.filter(Boolean).map(student => [student.id, student]));
+    const lessons = data.lessons.map(lesson => {
+      if (!lesson || typeof lesson !== "object") return lesson;
+      const student = studentMap.get(lesson.studentId);
+      return {
+        ...lesson,
+        subject: String(lesson.subject || student?.subject || ""),
+        status: STATUS_LABELS[lesson.status] ? lesson.status : "scheduled",
+        recurrenceGroupId: lesson.recurrenceGroupId || null,
+        startedAt: lesson.startedAt || null,
+        recordId: lesson.recordId || null,
+        notes: String(lesson.notes || ""),
+        location: String(lesson.location || ""),
+        mode: lesson.mode === "online" ? "online" : "inPerson",
+      };
+    });
+    const lessonRecords = (Array.isArray(data.lessonRecords) ? data.lessonRecords : []).map(record => {
+      if (!record || typeof record !== "object") return record;
+      const status = STATUS_LABELS[record.status] ? record.status : "completed";
+      return {
+        ...record,
+        status,
+        deductLesson: typeof record.deductLesson === "boolean" ? record.deductLesson : Boolean(DEFAULT_DEDUCT[status]),
+        note: String(record.note || ""),
+      };
+    });
+    return { ...data, teacherProfile: normalizeTeacherProfile(data.teacherProfile), students, lessons, lessonRecords, version: APP_VERSION };
+  }
+
+  function loadData() {
+    let raw = null;
+    try {
+      raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        const demo = createDemoData();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(demo));
+        return demo;
+      }
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeStoredData(parsed);
+      if (validateImportedData(normalized)) return normalized;
+      invalidStoredData = raw;
+      console.warn("本機資料格式不完整，已保留原始內容並使用安全示範資料");
+    } catch (err) {
+      invalidStoredData = raw;
+      console.warn("讀取本機資料失敗", err);
+    }
+    return createDemoData();
+  }
+
+  function saveData() {
+    if (invalidStoredData !== null && !localStorage.getItem(`${STORAGE_KEY}_recovery`)) {
+      localStorage.setItem(`${STORAGE_KEY}_recovery`, invalidStoredData);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    invalidStoredData = null;
+  }
+
+  function calculateRemainingLessons(student) {
+    if (!student || student.billingType === "perLesson" || student.totalLessons == null) return null;
+    return Math.max(0, student.totalLessons - student.usedLessons);
+  }
+
+  function timeToMinutes(time) {
+    const [h, m] = time.split(":").map(Number);
+    return h * 60 + m;
+  }
+
+  function hasScheduleConflict(candidate, ignoreLessonId = null) {
+    const start = timeToMinutes(candidate.startTime);
+    const end = timeToMinutes(candidate.endTime);
+    return state.lessons.some(l => {
+      if (l.id === ignoreLessonId || l.date !== candidate.date || l.status === "cancelled" || l.status === "rescheduled") return false;
+      const otherStart = timeToMinutes(l.startTime);
+      const otherEnd = timeToMinutes(l.endTime);
+      return start < otherEnd && end > otherStart;
+    });
+  }
+
+  function weekdayNumber(iso) {
+    const day = parseISODate(iso).getDay();
+    return day === 0 ? 7 : day;
+  }
+
+  function weekdayName(number) {
+    return ({ 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" })[number] || "";
+  }
+
+  function findLessonConflicts(candidateLessons, existingLessons, ignoreLessonId = null) {
+    const conflicts = [];
+    for (const candidate of candidateLessons) {
+      const candidateStart = timeToMinutes(candidate.startTime);
+      const candidateEnd = timeToMinutes(candidate.endTime);
+      for (const existing of existingLessons) {
+        if (existing.id === ignoreLessonId || existing.date !== candidate.date || existing.status === "cancelled" || existing.status === "rescheduled") continue;
+        const existingStart = timeToMinutes(existing.startTime);
+        const existingEnd = timeToMinutes(existing.endTime);
+        if (candidateStart < existingEnd && candidateEnd > existingStart) {
+          conflicts.push({ candidate, existing });
+        }
+      }
+    }
+    return conflicts;
+  }
+
+  function generateRecurringLessonPlan(input, existingLessons, options = {}) {
+    const targetCount = Math.max(0, Number(input.targetCount) || 0);
+    const weekdays = [...new Set((input.weekdays || []).map(Number).filter(day => day >= 1 && day <= 7))];
+    const autoSupplement = options.autoSupplement !== false;
+    const maxWeeks = Math.max(1, Number(options.maxWeeks) || 104);
+    const originalDates = [];
+    const accepted = [];
+    const supplemented = [];
+    const skipped = [];
+    if (!input.startDate || !weekdays.length || !targetCount) {
+      return { targetCount, originalDates, accepted, supplemented, skipped, limitReached: false, lastDate: null };
+    }
+    const horizon = addDays(input.startDate, maxWeeks * 7);
+    let cursor = input.startDate;
+    let guard = 0;
+    while (cursor <= horizon && guard <= maxWeeks * 7) {
+      if (weekdays.includes(weekdayNumber(cursor))) {
+        const candidate = { ...input.baseLesson, date: cursor };
+        const isOriginal = originalDates.length < targetCount;
+        if (isOriginal) originalDates.push(candidate);
+        const conflicts = findLessonConflicts([candidate], existingLessons);
+        if (!conflicts.length) {
+          if (isOriginal || (autoSupplement && accepted.length < targetCount)) {
+            accepted.push(candidate);
+            if (!isOriginal) supplemented.push(candidate);
+          }
+        } else if (isOriginal || (autoSupplement && accepted.length < targetCount)) {
+          skipped.push({ candidate, conflicts, isOriginal });
+        }
+        if (!autoSupplement && originalDates.length >= targetCount) break;
+        if (autoSupplement && originalDates.length >= targetCount && accepted.length >= targetCount) break;
+      }
+      cursor = addDays(cursor, 1);
+      guard += 1;
+    }
+    const finalAccepted = autoSupplement ? accepted.slice(0, targetCount) : accepted;
+    return {
+      targetCount,
+      originalDates,
+      accepted: finalAccepted,
+      supplemented: supplemented.filter(candidate => finalAccepted.includes(candidate)),
+      skipped,
+      limitReached: autoSupplement && finalAccepted.length < targetCount,
+      lastDate: finalAccepted.length ? finalAccepted[finalAccepted.length - 1].date : null,
+    };
+  }
+
+  function materializeRecurringLessons(baseLesson, candidates) {
+    const groupId = uid("rec");
+    const now = new Date().toISOString();
+    return candidates.map(candidate => ({
+      ...baseLesson,
+      id: uid("lesson"),
+      date: candidate.date,
+      recurrenceGroupId: groupId,
+      status: "scheduled",
+      startedAt: null,
+      recordId: null,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  }
+
+  function formatConflictMessage(skippedItem) {
+    const dateText = formatDate(skippedItem.candidate.date);
+    const candidateTime = `${skippedItem.candidate.startTime}–${skippedItem.candidate.endTime}`;
+    const detail = skippedItem.conflicts.map(({ existing }) => {
+      const student = studentById(existing.studentId) || { name: "已刪除學生" };
+      return `與「${student.name}｜${existing.subject}｜${existing.startTime}–${existing.endTime}」衝突`;
+    }).join("；");
+    return { dateText, candidateTime, detail };
+  }
+
+  function recentStudents(limit = 4) {
+    const seen = new Set();
+    const ordered = [...state.lessons]
+      .sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`))
+      .map(lesson => lesson.studentId)
+      .filter(id => {
+        if (seen.has(id) || !studentById(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    for (const student of state.students) {
+      if (!seen.has(student.id)) ordered.push(student.id);
+    }
+    return ordered.slice(0, limit).map(studentById).filter(Boolean);
+  }
+
+  function latestLessonForStudent(studentId, ignoreLessonId = null) {
+    return [...state.lessons]
+      .filter(item => item.studentId === studentId && item.id !== ignoreLessonId)
+      .sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`))[0] || null;
+  }
+
+  function studentById(id) { return state.students.find(s => s.id === id); }
+  function lessonById(id) { return state.lessons.find(l => l.id === id); }
+  function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id); }
+
+  function escapeHtml(value = "") {
+    return String(value).replace(/[&<>'"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[ch]));
+  }
+
+  function money(value) {
+    if (value == null || value === "") return "未設定";
+    return `NT$${Number(value).toLocaleString("zh-TW")}`;
+  }
+
+  function toast(message, type = "success") {
+    const root = $("#toast-root");
+    root.innerHTML = `<div class="toast ${type === "error" ? "error" : ""}">${escapeHtml(message)}</div>`;
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => { root.innerHTML = ""; }, 2600);
+  }
+
+  function statusBadge(status) {
+    return `<span class="status status-${status}">${STATUS_LABELS[status] || status}</span>`;
+  }
+
+  function initials(name = "") { return name.trim().slice(-2) || "學生"; }
+
+  function topbar() {
+    return `
+      <header class="topbar">
+        <div class="brand"><div class="brand-mark">課</div><span>小課表</span></div>
+        <button class="icon-btn" aria-label="通知（示範）" data-action="notify">🔔</button>
+      </header>`;
+  }
+
+  function bottomNav() {
+    const items = [
+      ["home", "⌂", "首頁"],
+      ["schedule", "▦", "課表"],
+      ["students", "♟", "學生"],
+      ["more", "•••", "更多"],
+    ];
+    return `<nav class="bottom-nav" aria-label="主要導覽">${items.map(([key, icon, label]) => `
+      <button class="nav-btn ${ui.tab === key && !ui.studentDetailId ? "active" : ""}" data-tab="${key}">
+        <span class="nav-icon" aria-hidden="true">${icon}</span><span>${label}</span>
+      </button>`).join("")}</nav>`;
+  }
+
+  function lessonAction(lesson, options = {}) {
+    if (options.edit) {
+      return `<div class="lesson-control"><button class="quick-action copy" data-action="copy-lesson" data-id="${lesson.id}">複製</button><button class="quick-action soft" data-action="edit-lesson" data-id="${lesson.id}">編輯</button></div>`;
+    }
+    if (lesson.status === "scheduled") {
+      return `<div class="lesson-control"><button class="quick-action soft" data-action="quick-complete" data-id="${lesson.id}">記一堂</button><button class="lesson-menu-btn" data-action="lesson-more" data-id="${lesson.id}" aria-label="其他課程狀態">⋯</button></div>`;
+    }
+    if (lesson.status === "inProgress") {
+      return `<div class="lesson-control"><button class="quick-action primary" data-action="quick-complete" data-id="${lesson.id}">完成</button><button class="lesson-menu-btn" data-action="lesson-more" data-id="${lesson.id}" aria-label="其他課程狀態">⋯</button></div>`;
+    }
+    if (lesson.recordId) {
+      const tone = lesson.status === "completed" ? "done" : (["studentLeave","teacherLeave","absent","rescheduled"].includes(lesson.status) ? "warn" : "muted");
+      return `<div class="lesson-control"><button class="quick-action ${tone}" data-action="edit-record" data-id="${lesson.id}">${STATUS_LABELS[lesson.status] || "查看"}</button></div>`;
+    }
+    return `<div class="lesson-control"><button class="quick-action muted" data-action="lesson-more" data-id="${lesson.id}">補記</button></div>`;
+  }
+
+  function lessonCard(lesson, options = {}) {
+    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const place = lesson.location ? lesson.location : (lesson.mode === "online" ? "線上" : "未填地點");
+    const meta = `${lesson.subject} · ${lesson.mode === "online" ? "線上" : "實體"} · ${place}`;
+    return `
+      <article class="lesson-card">
+        <div class="lesson-top">
+          <div class="time-block"><strong>${escapeHtml(lesson.startTime)}</strong><span>– ${escapeHtml(lesson.endTime)}</span></div>
+          <div class="lesson-person">
+            <div style="min-width:0;width:100%">
+              <h3>${escapeHtml(student.name)}</h3>
+              <div class="lesson-meta" title="${escapeHtml(meta)}">${escapeHtml(meta)}</div>
+            </div>
+          </div>
+          ${lessonAction(lesson, options)}
+        </div>
+      </article>`;
+  }
+
+  function emptyState(title, text, actionLabel = "", action = "") {
+    return `<div class="empty-card"><div class="empty-icon">🗓️</div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p>${actionLabel ? `<button class="btn btn-primary" data-action="${action}">${escapeHtml(actionLabel)}</button>` : ""}</div>`;
+  }
+
+  function renderHome() {
+    const today = todayISO();
+    const lessons = state.lessons.filter(l => l.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const month = today.slice(0, 7);
+    const monthCompleted = state.lessons.filter(l => l.date.startsWith(month) && l.status === "completed").length;
+    return `
+      ${topbar()}
+      <section class="hero"><h1>${greeting()}，${escapeHtml(state.teacherProfile?.name || "林老師")} 👋</h1><p>${formatDate(today)}</p></section>
+      <section class="summary-bar" aria-label="課程摘要">
+        <div>今天 <strong>${lessons.length}</strong> 堂</div>
+        <span class="summary-divider" aria-hidden="true"></span>
+        <div>本月完成 <strong>${monthCompleted}</strong> 堂</div>
+      </section>
+      <section class="section">
+        <div class="section-heading"><h2>今日課程</h2><span class="subtle">依時間排序</span></div>
+        <div class="card-list">${lessons.length ? lessons.map(l => lessonCard(l)).join("") : emptyState("今天沒有安排課程", "先讓自己休息一下吧。", "新增課程", "add-lesson")}</div>
+      </section>
+      <div class="fab-row"><button class="btn btn-primary btn-full" data-action="add-lesson">＋ 新增課程</button></div>
+      ${bottomNav()}`;
+  }
+
+  function getWeekStartMonday(centerISO) {
+    const center = parseISODate(centerISO);
+    const weekday = center.getDay();
+    const monday = new Date(center);
+    monday.setDate(center.getDate() + (weekday === 0 ? -6 : 1 - weekday));
+    return dateToISO(monday);
+  }
+
+  function weekDates(centerISO) {
+    const monday = parseISODate(getWeekStartMonday(centerISO));
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return dateToISO(d);
+    });
+  }
+
+  function addMonths(iso, amount) {
+    const source = parseISODate(iso);
+    const target = new Date(source.getFullYear(), source.getMonth() + amount, 1);
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+    target.setDate(Math.min(source.getDate(), lastDay));
+    return dateToISO(target);
+  }
+
+  function monthDates(centerISO) {
+    const center = parseISODate(centerISO);
+    const first = new Date(center.getFullYear(), center.getMonth(), 1);
+    const gridStart = new Date(first);
+    gridStart.setDate(first.getDate() - first.getDay());
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart);
+      date.setDate(gridStart.getDate() + index);
+      return dateToISO(date);
+    });
+  }
+
+  function calendarPeriodLabel() {
+    const selected = parseISODate(ui.selectedDate);
+    if (ui.calendarView === "month") return `${selected.getFullYear()}年${selected.getMonth() + 1}月`;
+    const dates = weekDates(ui.selectedDate);
+    const start = parseISODate(dates[0]);
+    const end = parseISODate(dates[6]);
+    if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
+      return `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日–${end.getDate()}日`;
+    }
+    if (start.getFullYear() === end.getFullYear()) {
+      return `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日–${end.getMonth() + 1}月${end.getDate()}日`;
+    }
+    return `${start.getFullYear()}/${start.getMonth() + 1}/${start.getDate()}–${end.getFullYear()}/${end.getMonth() + 1}/${end.getDate()}`;
+  }
+
+  function calendarColorIndex(value = "") {
+    let hash = 0;
+    for (const char of String(value)) hash = ((hash * 31) + char.charCodeAt(0)) >>> 0;
+    return hash % 6;
+  }
+
+  function lessonsOn(date) {
+    return state.lessons.filter(lesson => lesson.date === date).sort((a, b) => {
+      const timeOrder = a.startTime.localeCompare(b.startTime);
+      return timeOrder || a.endTime.localeCompare(b.endTime);
+    });
+  }
+
+  function renderCalendarSwitch() {
+    return `<div class="calendar-view-switch" role="group" aria-label="課表檢視">
+      <button class="calendar-view-btn ${ui.calendarView === "week" ? "active" : ""}" data-calendar-view="week" aria-pressed="${ui.calendarView === "week"}">週視圖</button>
+      <button class="calendar-view-btn ${ui.calendarView === "month" ? "active" : ""}" data-calendar-view="month" aria-pressed="${ui.calendarView === "month"}">月視圖</button>
+    </div>`;
+  }
+
+  function renderCalendarToolbar() {
+    const unit = ui.calendarView === "week" ? "週" : "月";
+    return `<div class="calendar-toolbar">
+      <button class="mini-btn" data-action="calendar-prev" aria-label="上一${unit}">‹</button>
+      <div class="calendar-period"><strong>${calendarPeriodLabel()}</strong><button class="calendar-today-btn" data-action="calendar-today">回到今天</button></div>
+      <button class="mini-btn" data-action="calendar-next" aria-label="下一${unit}">›</button>
+    </div>`;
+  }
+
+  function layoutWeekLessons(lessons) {
+    const sorted = [...lessons].sort((a, b) => {
+      const startOrder = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+      return startOrder || timeToMinutes(a.endTime) - timeToMinutes(b.endTime);
+    });
+    const output = [];
+    let group = [];
+    let groupEnd = -1;
+    const finishGroup = () => {
+      if (!group.length) return;
+      const laneEnds = [];
+      const laidOut = group.map(lesson => {
+        const start = timeToMinutes(lesson.startTime);
+        const end = timeToMinutes(lesson.endTime);
+        let lane = laneEnds.findIndex(laneEnd => laneEnd <= start);
+        if (lane < 0) lane = laneEnds.length;
+        laneEnds[lane] = end;
+        return { lesson, lane };
+      });
+      const laneCount = Math.max(1, laneEnds.length);
+      laidOut.forEach(item => output.push({ ...item, laneCount, hasOverlap: laneCount > 1 }));
+      group = [];
+      groupEnd = -1;
+    };
+    for (const lesson of sorted) {
+      const start = timeToMinutes(lesson.startTime);
+      if (group.length && start >= groupEnd) finishGroup();
+      group.push(lesson);
+      groupEnd = Math.max(groupEnd, timeToMinutes(lesson.endTime));
+    }
+    finishGroup();
+    return output;
+  }
+
+  function renderWeekEvent(layoutItem) {
+    const { lesson, lane = 0, laneCount = 1, hasOverlap = false } = layoutItem;
+    const rangeStart = WEEK_START_HOUR * 60;
+    const rangeEnd = WEEK_END_HOUR * 60;
+    const lessonStart = timeToMinutes(lesson.startTime);
+    const lessonEnd = timeToMinutes(lesson.endTime);
+    const visibleStart = Math.max(rangeStart, lessonStart);
+    const visibleEnd = Math.min(rangeEnd, lessonEnd);
+    if (visibleEnd <= visibleStart) return "";
+    const top = ((visibleStart - rangeStart) / 60) * WEEK_HOUR_HEIGHT;
+    const height = Math.max(26, ((visibleEnd - visibleStart) / 60) * WEEK_HOUR_HEIGHT - 3);
+    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const color = calendarColorIndex(lesson.studentId);
+    const cancelled = lesson.status === "cancelled" ? "cancelled" : "";
+    const label = `${lesson.startTime} 到 ${lesson.endTime}，${student.name}，${lesson.subject}，${STATUS_LABELS[lesson.status] || lesson.status}`;
+    const laneLeft = (lane / laneCount) * 100;
+    const laneWidth = 100 / laneCount;
+    return `<button class="week-event calendar-color-${color} ${cancelled} ${hasOverlap ? "has-overlap" : ""}" style="top:${top.toFixed(2)}px;height:${height.toFixed(2)}px;left:calc(${laneLeft}% + 1px);right:auto;width:calc(${laneWidth}% - 2px)" data-action="course-detail" data-id="${lesson.id}" aria-label="${escapeHtml(label)}">
+      <span class="week-event-time">${escapeHtml(lesson.startTime)}</span>
+      <span class="week-event-name">${escapeHtml(student.name)}</span>
+      <span class="week-event-subject">${escapeHtml(lesson.subject)}</span>
+    </button>`;
+  }
+
+  function renderWeekView() {
+    const dates = weekDates(ui.selectedDate);
+    const weekday = ["一", "二", "三", "四", "五", "六", "日"];
+    const today = todayISO();
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const showNow = dates.includes(today) && nowMinutes >= WEEK_START_HOUR * 60 && nowMinutes <= WEEK_END_HOUR * 60;
+    const timeLabels = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, index) => {
+      const hour = WEEK_START_HOUR + index;
+      return `<span class="week-time-label" style="top:${index * WEEK_HOUR_HEIGHT}px">${pad(hour)}:00</span>`;
+    }).join("");
+    const slotCount = (WEEK_END_HOUR - WEEK_START_HOUR) * 2;
+    return `<div class="week-scroll" data-week-scroll aria-label="完整七天週課表">
+      <div class="week-canvas">
+        <div class="week-corner" aria-hidden="true"></div>
+        ${dates.map((date, index) => {
+          const day = parseISODate(date);
+          return `<div class="week-day-head ${date === today ? "today" : ""}" style="grid-column:${index + 2};grid-row:1"><span>週${weekday[index]}</span><strong>${day.getDate()}</strong></div>`;
+        }).join("")}
+        <div class="week-time-axis">${timeLabels}</div>
+        ${dates.map((date, index) => {
+          const slots = Array.from({ length: slotCount }, (_, slotIndex) => {
+            const startMinutes = WEEK_START_HOUR * 60 + slotIndex * 30;
+            const startTime = `${pad(Math.floor(startMinutes / 60))}:${pad(startMinutes % 60)}`;
+            return `<button class="week-slot" style="top:${slotIndex * WEEK_HOUR_HEIGHT / 2}px" data-action="add-calendar-lesson" data-calendar-date="${date}" data-start-time="${startTime}" aria-label="${formatDate(date)} ${startTime} 新增課程"></button>`;
+          }).join("");
+          const events = layoutWeekLessons(lessonsOn(date)).map(renderWeekEvent).join("");
+          const nowLine = showNow && date === today ? `<div class="now-line" style="top:${((nowMinutes - WEEK_START_HOUR * 60) / 60) * WEEK_HOUR_HEIGHT}px" aria-hidden="true"></div>` : "";
+          return `<div class="week-day-column ${date === today ? "today" : ""}" style="grid-column:${index + 2}" data-week-date="${date}">${slots}${events}${nowLine}</div>`;
+        }).join("")}
+      </div>
+    </div>
+    <p class="calendar-hint">完整顯示星期一至星期日與 08:00–23:00；點空白時段可直接新增課程。</p>`;
+  }
+
+  function calendarAgendaItem(lesson) {
+    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const color = calendarColorIndex(lesson.studentId);
+    return `<button class="calendar-list-item calendar-color-${color} ${lesson.status === "cancelled" ? "cancelled" : ""}" data-action="course-detail" data-id="${lesson.id}" aria-label="開啟 ${escapeHtml(student.name)} 的課程操作">
+      <span class="calendar-list-time"><strong>${escapeHtml(lesson.startTime)}</strong><span>– ${escapeHtml(lesson.endTime)}</span></span>
+      <span class="calendar-list-info"><strong>${escapeHtml(student.name)}</strong><span>${escapeHtml(lesson.subject)}</span></span>
+      ${statusBadge(lesson.status)}
+    </button>`;
+  }
+
+  function renderDayAgenda() {
+    const lessons = lessonsOn(ui.selectedDate);
+    return `<section class="day-agenda" aria-label="當日課程">
+      <div class="day-agenda-heading"><div><h2>當日課程</h2><span>${formatDate(ui.selectedDate)}</span></div><button class="mini-btn" data-action="add-calendar-lesson" data-calendar-date="${ui.selectedDate}">＋ 新增</button></div>
+      ${lessons.length ? `<div class="calendar-list">${lessons.map(calendarAgendaItem).join("")}</div>` : `<div class="agenda-empty"><p>這天還沒有安排課程。</p><button class="btn btn-soft" data-action="add-calendar-lesson" data-calendar-date="${ui.selectedDate}">新增課程</button></div>`}
+    </section>`;
+  }
+
+  function renderMonthView() {
+    const dates = monthDates(ui.selectedDate);
+    const currentMonth = ui.selectedDate.slice(0, 7);
+    const today = todayISO();
+    const lessonsByDate = new Map();
+    for (const lesson of state.lessons) {
+      if (lesson.date >= dates[0] && lesson.date <= dates[dates.length - 1]) {
+        if (!lessonsByDate.has(lesson.date)) lessonsByDate.set(lesson.date, []);
+        lessonsByDate.get(lesson.date).push(lesson);
+      }
+    }
+    for (const lessons of lessonsByDate.values()) lessons.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    return `<div class="month-weekdays" aria-hidden="true">${["日","一","二","三","四","五","六"].map(day => `<span>${day}</span>`).join("")}</div>
+      <div class="month-grid" role="grid" aria-label="${calendarPeriodLabel()}">
+        ${dates.map(date => {
+          const day = parseISODate(date);
+          const lessons = lessonsByDate.get(date) || [];
+          const markers = lessons.slice(0, 3).map(lesson => `<span class="month-dot calendar-color-${calendarColorIndex(lesson.studentId)}" aria-hidden="true"></span>`).join("");
+          const more = lessons.length > 3 ? `<span class="month-more">+${lessons.length - 3}</span>` : "";
+          const label = `${formatDate(date)}${lessons.length ? `，${lessons.length} 堂課` : "，沒有課程"}`;
+          return `<button class="month-day ${date.slice(0, 7) !== currentMonth ? "other-month" : ""} ${date === today ? "today" : ""} ${date === ui.selectedDate ? "selected" : ""}" data-date="${date}" role="gridcell" aria-selected="${date === ui.selectedDate}" aria-label="${label}">
+            <span class="month-day-number">${day.getDate()}</span><span class="month-markers">${markers}${more}</span>
+          </button>`;
+        }).join("")}
+      </div>
+      ${renderDayAgenda()}`;
+  }
+
+  function renderSchedule() {
+    return `
+      ${topbar()}
+      <main class="calendar-page">
+        <div class="page-title-row"><h1>課表</h1><button class="btn btn-primary" data-action="add-calendar-lesson" data-calendar-date="${ui.selectedDate}">＋ 新增</button></div>
+        ${renderCalendarSwitch()}
+        ${renderCalendarToolbar()}
+        ${ui.calendarView === "month" ? renderMonthView() : renderWeekView()}
+      </main>
+      ${bottomNav()}`;
+  }
+
+  function scrollWeekToRelevantDay() {
+    const scroller = $("[data-week-scroll]");
+    if (!scroller) return;
+    scroller.scrollLeft = 0;
+  }
+
+  function studentCard(student) {
+    const remaining = calculateRemainingLessons(student);
+    const packageText = student.billingType === "perLesson" ? "按次計費" : `${student.usedLessons} / ${student.totalLessons} 堂`;
+    const remainingText = remaining == null ? "不計堂數" : `${remaining} 堂`;
+    return `<article class="student-card">
+      <button class="card-hit" data-action="open-student" data-id="${student.id}">
+        <div class="student-head"><div class="avatar">${escapeHtml(initials(student.name))}</div><div><h3>${escapeHtml(student.name)}</h3><div class="lesson-meta">${escapeHtml(student.subject)}${student.phone ? ` · ${escapeHtml(student.phone)}` : ""}</div></div></div>
+        <div class="student-stats"><div class="stat-box"><small>已上／總堂數</small><strong>${packageText}</strong></div><div class="stat-box"><small>剩餘堂數</small><strong>${remainingText}</strong></div></div>
+        ${remaining !== null && remaining <= 2 ? `<div class="warning">⚠ 即將用完</div>` : ""}
+      </button>
+    </article>`;
+  }
+
+  function renderStudents() {
+    const term = ui.search.trim().toLowerCase();
+    const students = state.students.filter(s => !term || `${s.name} ${s.subject} ${s.phone || ""}`.toLowerCase().includes(term));
+    return `
+      ${topbar()}
+      <div class="page-title-row"><h1>學生</h1><button class="btn btn-primary" data-action="add-student">＋ 新增</button></div>
+      <div class="search-row"><input id="student-search" type="search" placeholder="搜尋姓名、科目或電話" value="${escapeHtml(ui.search)}" aria-label="搜尋學生" /></div>
+      <div class="card-list">${students.length ? students.map(studentCard).join("") : emptyState("找不到學生", term ? "換個關鍵字試試看。" : "先新增第一位學生吧。", term ? "" : "新增學生", "add-student")}</div>
+      ${bottomNav()}`;
+  }
+
+  function renderStudentDetail(studentId) {
+    const student = studentById(studentId);
+    if (!student) {
+      ui.studentDetailId = null;
+      ui.tab = "students";
+      return renderStudents();
+    }
+    const remaining = calculateRemainingLessons(student);
+    const lessons = state.lessons.filter(l => l.studentId === student.id).sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
+    const records = lessons.map(l => ({ lesson: l, record: recordByLessonId(l.id) })).filter(x => x.record);
+    return `
+      <div class="page-title-row"><button class="back-btn" data-action="back-students" aria-label="返回學生列表">←</button><h1 style="flex:1;text-align:center">學生資料</h1><span style="width:42px"></span></div>
+      <section class="detail-hero">
+        <div class="detail-title"><div class="avatar">${escapeHtml(initials(student.name))}</div><div><h1>${escapeHtml(student.name)}</h1><div class="lesson-meta">${escapeHtml(student.subject)}${student.phone ? ` · ${escapeHtml(student.phone)}` : ""}</div></div></div>
+        <div class="detail-grid">
+          <div class="info-cell"><small>已上堂數</small><strong>${student.usedLessons}</strong></div>
+          <div class="info-cell"><small>剩餘堂數</small><strong>${remaining == null ? "按次計費" : remaining}</strong></div>
+          <div class="info-cell"><small>購買總堂數</small><strong>${student.totalLessons == null ? "—" : student.totalLessons}</strong></div>
+          <div class="info-cell"><small>每堂費用</small><strong>${money(student.pricePerLesson)}</strong></div>
+        </div>
+        <div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯資料</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button></div>
+        ${student.contactNote ? `<p class="lesson-meta" style="margin:14px 2px 0">聯絡備註：${escapeHtml(student.contactNote)}</p>` : ""}
+        ${student.notes ? `<p class="lesson-meta" style="margin:8px 2px 0">學生備註：${escapeHtml(student.notes)}</p>` : ""}
+      </section>
+      <section class="section"><div class="section-heading"><h2>上課紀錄</h2><span class="subtle">${records.length} 筆</span></div>
+      <div class="card-list">${records.length ? records.map(({ lesson, record }) => `<article class="record-card"><button class="card-hit" style="width:100%;border:0;background:transparent;text-align:left;padding:0" data-action="edit-record" data-id="${lesson.id}"><div class="record-row"><div><h3>${formatShortDate(lesson.date)} · ${lesson.startTime}</h3><div class="lesson-meta">${escapeHtml(lesson.subject)} · ${record.deductLesson ? "有扣堂" : "未扣堂"}</div></div>${statusBadge(record.status)}</div>${record.note ? `<p>${escapeHtml(record.note)}</p>` : ""}</button></article>`).join("") : emptyState("還沒有上課紀錄", "完成課程後，紀錄會自動出現在這裡。")}</div></section>
+      ${bottomNav()}`;
+  }
+
+  function renderMore() {
+    const profile = state.teacherProfile || defaultTeacherProfile();
+    const profileMeta = profile.subjects.length ? profile.subjects.join("、") : "尚未設定授課科目";
+    return `
+      ${topbar()}
+      <div class="page-title-row"><h1>更多</h1></div>
+      <section class="detail-hero"><div class="detail-title"><div class="avatar">${escapeHtml(initials(profile.name))}</div><div><h1>${escapeHtml(profile.name)}</h1><div class="lesson-meta">${escapeHtml(profileMeta)}</div></div></div></section>
+      <section class="section"><div class="section-heading"><h2>設定</h2></div>
+        <div class="settings-card">
+          <button class="settings-item" data-action="edit-teacher"><span><strong>老師資訊</strong><br><small>姓名、聯絡方式與課程預設值</small></span><span>›</span></button>
+          <button class="settings-item" data-action="install-app"><span><strong>安裝到手機</strong><br><small>加入主畫面，像 App 一樣開啟並支援離線</small></span><span>›</span></button>
+        </div>
+      </section>
+      <section class="section"><div class="section-heading"><h2>資料備份</h2></div>
+        <div class="settings-card">
+          <button class="settings-item" data-action="export-json"><span><strong>下載完整備份（JSON）</strong><br><small>包含老師、學生、課程與堂數紀錄</small></span><span>↓</span></button>
+          <button class="settings-item" data-action="export-csv"><span><strong>下載課程明細（CSV）</strong><br><small>可用 Excel 或 Google 試算表開啟</small></span><span>↓</span></button>
+          <button class="settings-item" data-action="import-data"><span><strong>匯入資料</strong><br><small>選擇先前匯出的 JSON</small></span><span>›</span></button>
+          <button class="settings-item" data-action="reset-demo"><span><strong>重新載入示範資料</strong><br><small>會覆蓋目前資料</small></span><span>›</span></button>
+          <button class="settings-item" data-action="clear-data"><span style="color:var(--red)"><strong>清除全部資料</strong><br><small>此操作無法復原</small></span><span>›</span></button>
+        </div>
+        <p class="export-note">CSV 僅包含課程明細，不會匯出老師電話、Email 或其他聯絡資料。</p>
+      </section>
+      <input class="file-input" id="import-file" type="file" accept="application/json,.json" />
+      <div class="version">小課表 MVP ${APP_VERSION}</div>
+      ${bottomNav()}`;
+  }
+
+  function render() {
+    const app = $("#app");
+    if (ui.studentDetailId) app.innerHTML = renderStudentDetail(ui.studentDetailId);
+    else if (ui.tab === "schedule") app.innerHTML = renderSchedule();
+    else if (ui.tab === "students") app.innerHTML = renderStudents();
+    else if (ui.tab === "more") app.innerHTML = renderMore();
+    else app.innerHTML = renderHome();
+    if (ui.tab === "schedule" && !ui.studentDetailId && ui.calendarView === "week") {
+      requestAnimationFrame(scrollWeekToRelevantDay);
+    }
+  }
+
+  function openSheet(title, bodyHtml, onReady) {
+    const root = $("#overlay-root");
+    root.innerHTML = `<div class="sheet-backdrop"><section class="sheet" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}"><div class="sheet-handle"></div><div class="sheet-header"><h2>${escapeHtml(title)}</h2><button class="close-btn" data-action="close-sheet" aria-label="關閉">✕</button></div>${bodyHtml}</section></div>`;
+    const sheet = $(".sheet", root);
+    const backdrop = $(".sheet-backdrop", root);
+    backdrop.addEventListener("click", e => {
+      if (e.target === backdrop) closeSheet();
+    });
+    if (onReady) onReady(root);
+    const firstInput = $("input, select, textarea, button", sheet);
+    if (firstInput) setTimeout(() => firstInput.focus(), 20);
+  }
+
+  function closeSheet() { $("#overlay-root").innerHTML = ""; }
+
+  async function installApp() {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if (choice.outcome === "accepted") toast("小課表正在安裝到手機");
+      return;
+    }
+
+    openSheet("安裝到手機", `
+      <div class="form-grid">
+        <section class="detail-hero">
+          <h3 style="margin:0 0 8px">iPhone／iPad（Safari）</h3>
+          <p style="margin:0;color:var(--muted);line-height:1.7">點 Safari 下方的「分享」按鈕，再選「加入主畫面」。</p>
+        </section>
+        <section class="detail-hero">
+          <h3 style="margin:0 0 8px">Android（Chrome）</h3>
+          <p style="margin:0;color:var(--muted);line-height:1.7">點右上角選單，再選「安裝應用程式」或「加到主畫面」。</p>
+        </section>
+        <p class="export-note">請先從 GitHub Pages 的 HTTPS 網址開啟；直接開啟本機檔案時無法安裝或離線使用。</p>
+        <button class="btn btn-primary" type="button" data-action="close-sheet">知道了</button>
+      </div>`);
+  }
+
+  function teacherProfileForm() {
+    const profile = normalizeTeacherProfile(state.teacherProfile);
+    openSheet("老師資訊", `
+      <form id="teacher-profile-form" class="form-grid" novalidate>
+        <div class="field"><label for="teacher-name">老師姓名 *</label><input id="teacher-name" name="name" value="${escapeHtml(profile.name)}" required /><div class="form-error" data-error="name"></div></div>
+        <div class="form-row">
+          <div class="field"><label for="teacher-phone">聯絡電話</label><input id="teacher-phone" name="phone" inputmode="tel" value="${escapeHtml(profile.phone)}" /></div>
+          <div class="field"><label for="teacher-line">LINE ID／其他聯絡</label><input id="teacher-line" name="lineId" value="${escapeHtml(profile.lineId)}" /></div>
+        </div>
+        <div class="field"><label for="teacher-email">Email</label><input id="teacher-email" name="email" type="email" value="${escapeHtml(profile.email)}" autocomplete="email" /><div class="form-error" data-error="email"></div></div>
+        <div class="field"><label for="teacher-subjects">授課科目</label><input id="teacher-subjects" name="subjects" value="${escapeHtml(profile.subjects.join("、"))}" placeholder="例如：數學、英文、物理" /><div class="teacher-subject-help">可用頓號、逗號或換行分隔多個科目。</div></div>
+        <div class="field"><label>預設授課方式</label><div class="segmented segmented-3">
+          <label><input type="radio" name="defaultLessonMode" value="" ${profile.defaultLessonMode === "" ? "checked" : ""}><span>未指定</span></label>
+          <label><input type="radio" name="defaultLessonMode" value="inPerson" ${profile.defaultLessonMode === "inPerson" ? "checked" : ""}><span>實體</span></label>
+          <label><input type="radio" name="defaultLessonMode" value="online" ${profile.defaultLessonMode === "online" ? "checked" : ""}><span>線上</span></label>
+        </div></div>
+        <div class="field"><label for="teacher-location">預設地點或線上連結</label><input id="teacher-location" name="defaultLocation" value="${escapeHtml(profile.defaultLocation)}" placeholder="例如：老師家、Google Meet" /></div>
+        <div class="field"><label for="teacher-duration">預設課程時長</label><select id="teacher-duration" name="defaultDuration">${[30,45,60,90,120].map(duration => `<option value="${duration}" ${profile.defaultDuration === duration ? "selected" : ""}>${duration} 分鐘</option>`).join("")}</select></div>
+        <div class="field"><label for="teacher-note">備註</label><textarea id="teacher-note" name="note">${escapeHtml(profile.note)}</textarea></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">儲存老師資訊</button></div>
+      </form>`, root => {
+        const form = $("#teacher-profile-form", root);
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          const data = new FormData(form);
+          const name = String(data.get("name") || "").trim();
+          const email = String(data.get("email") || "").trim();
+          $('[data-error="name"]', form).textContent = "";
+          $('[data-error="email"]', form).textContent = "";
+          let valid = true;
+          if (!name) {
+            $('[data-error="name"]', form).textContent = "請輸入老師姓名";
+            valid = false;
+          }
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            $('[data-error="email"]', form).textContent = "Email 格式不正確";
+            valid = false;
+          }
+          if (!valid) return;
+          state.teacherProfile = normalizeTeacherProfile({
+            name,
+            phone: data.get("phone"),
+            email,
+            lineId: data.get("lineId"),
+            subjects: String(data.get("subjects") || "").split(/[,，、\n]/),
+            defaultLessonMode: data.get("defaultLessonMode"),
+            defaultLocation: data.get("defaultLocation"),
+            defaultDuration: Number(data.get("defaultDuration")),
+            note: data.get("note"),
+            updatedAt: new Date().toISOString(),
+          });
+          saveData();
+          closeSheet();
+          render();
+          toast("老師資訊已儲存");
+        });
+      });
+  }
+
+  function courseDetailSheet(lesson) {
+    if (!lesson) return;
+    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const place = lesson.location || (lesson.mode === "online" ? "線上" : "未填地點");
+    const primaryAction = lesson.status === "scheduled"
+      ? `<button class="btn btn-soft" data-action="start-lesson" data-id="${lesson.id}">開始上課</button><button class="btn btn-primary" data-action="quick-complete" data-id="${lesson.id}">記一堂</button>`
+      : lesson.status === "inProgress"
+        ? `<button class="btn btn-primary btn-full" style="grid-column:1/-1" data-action="quick-complete" data-id="${lesson.id}">完成課程</button>`
+        : "";
+    openSheet("課程操作", `
+      <section class="detail-hero">
+        <div class="record-row"><div><h3 style="margin:0 0 5px">${escapeHtml(student.name)} · ${escapeHtml(lesson.subject)}</h3><div class="lesson-meta">${formatDate(lesson.date)} · ${escapeHtml(lesson.startTime)}–${escapeHtml(lesson.endTime)}</div></div>${statusBadge(lesson.status)}</div>
+        <p class="lesson-meta" style="margin:12px 0 0">${lesson.mode === "online" ? "線上" : "實體"} · ${escapeHtml(place)}</p>
+        ${lesson.notes ? `<p class="lesson-meta" style="margin:7px 0 0">備註：${escapeHtml(lesson.notes)}</p>` : ""}
+        ${primaryAction ? `<div class="detail-actions">${primaryAction}</div>` : ""}
+        <div class="detail-actions">
+          <button class="btn btn-soft" data-action="edit-lesson" data-id="${lesson.id}">編輯課程</button>
+          <button class="btn btn-soft" data-action="copy-lesson" data-id="${lesson.id}">複製課程</button>
+          <button class="btn btn-ghost" style="grid-column:1/-1" data-action="lesson-more" data-id="${lesson.id}">${lesson.recordId ? "查看／修改上課紀錄" : "完成、請假、改期或取消"}</button>
+        </div>
+      </section>`);
+  }
+
+  function studentForm(student = null) {
+    const editing = Boolean(student);
+    openSheet(editing ? "編輯學生" : "新增學生", `
+      <form id="student-form" class="form-grid" novalidate>
+        <div class="field"><label for="student-name">姓名 *</label><input id="student-name" name="name" value="${escapeHtml(student?.name || "")}" required /><div class="form-error" data-error="name"></div></div>
+        <div class="field"><label for="student-subject">科目 *</label><input id="student-subject" name="subject" value="${escapeHtml(student?.subject || "")}" required /><div class="form-error" data-error="subject"></div></div>
+        <div class="field"><label for="student-phone">聯絡電話</label><input id="student-phone" name="phone" inputmode="tel" value="${escapeHtml(student?.phone || "")}" /></div>
+        <div class="field"><label for="student-contact-note">聯絡方式備註</label><input id="student-contact-note" name="contactNote" value="${escapeHtml(student?.contactNote || "")}" placeholder="例如：以 LINE 聯絡家長" /></div>
+        <div class="field"><label>計費方式</label><div class="segmented">
+          <label><input type="radio" name="billingType" value="package" ${!student || student.billingType === "package" ? "checked" : ""}><span>購買堂數</span></label>
+          <label><input type="radio" name="billingType" value="perLesson" ${student?.billingType === "perLesson" ? "checked" : ""}><span>按次計費</span></label>
+        </div></div>
+        <div class="field" id="total-lessons-field"><label for="total-lessons">購買堂數 *</label><input id="total-lessons" name="totalLessons" type="number" min="1" step="1" value="${student?.totalLessons ?? 10}" /><div class="form-error" data-error="totalLessons"></div></div>
+        <div class="form-row">
+          <div class="field"><label for="price">每堂費用</label><input id="price" name="pricePerLesson" type="number" min="0" step="50" value="${student?.pricePerLesson ?? ""}" placeholder="800" /></div>
+          <div class="field"><label for="duration">預設時長</label><select id="duration" name="defaultDuration">${[30,45,60,90,120].map(n => `<option value="${n}" ${Number(student?.defaultDuration || state.teacherProfile?.defaultDuration || 60) === n ? "selected" : ""}>${n} 分鐘</option>`).join("")}</select></div>
+        </div>
+        <div class="field"><label for="student-notes">備註</label><textarea id="student-notes" name="notes">${escapeHtml(student?.notes || "")}</textarea></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">${editing ? "儲存修改" : "新增學生"}</button></div>
+      </form>`, root => {
+        const form = $("#student-form", root);
+        const toggleTotal = () => {
+          const type = new FormData(form).get("billingType");
+          $("#total-lessons-field", root).style.display = type === "package" ? "block" : "none";
+        };
+        $$('input[name="billingType"]', root).forEach(el => el.addEventListener("change", toggleTotal));
+        toggleTotal();
+        form.addEventListener("submit", e => {
+          e.preventDefault();
+          const fd = new FormData(form);
+          const name = String(fd.get("name") || "").trim();
+          const subject = String(fd.get("subject") || "").trim();
+          const billingType = fd.get("billingType");
+          const totalLessons = billingType === "package" ? Number(fd.get("totalLessons")) : null;
+          $$('[data-error]', form).forEach(x => x.textContent = "");
+          let ok = true;
+          if (!name) { $('[data-error="name"]', form).textContent = "請輸入姓名"; ok = false; }
+          if (!subject) { $('[data-error="subject"]', form).textContent = "請輸入科目"; ok = false; }
+          if (billingType === "package" && (!Number.isInteger(totalLessons) || totalLessons < 1)) { $('[data-error="totalLessons"]', form).textContent = "請輸入有效堂數"; ok = false; }
+          if (!ok) return;
+          const now = new Date().toISOString();
+          const next = {
+            id: student?.id || uid("stu"),
+            name,
+            subject,
+            phone: String(fd.get("phone") || "").trim(),
+            contactNote: String(fd.get("contactNote") || "").trim(),
+            billingType,
+            totalLessons,
+            usedLessons: student?.usedLessons || 0,
+            pricePerLesson: fd.get("pricePerLesson") ? Number(fd.get("pricePerLesson")) : null,
+            defaultDuration: Number(fd.get("defaultDuration")),
+            notes: String(fd.get("notes") || "").trim(),
+            createdAt: student?.createdAt || now,
+            updatedAt: now,
+          };
+          if (editing) state.students = state.students.map(s => s.id === student.id ? next : s);
+          else state.students.push(next);
+          saveData(); closeSheet(); ui.tab = "students"; ui.studentDetailId = editing ? next.id : null; render(); toast(editing ? "學生資料已更新" : "學生已新增");
+        });
+      });
+  }
+
+  function addMinutes(time, minutes) {
+    let total = timeToMinutes(time) + minutes;
+    total = Math.min(total, 23 * 60 + 59);
+    return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+  }
+
+  function lessonForm(lesson = null, presetStudentId = null, templateLesson = null, preset = {}) {
+    if (!state.students.length) {
+      toast("請先新增學生", "error");
+      studentForm();
+      return;
+    }
+    const editing = Boolean(lesson);
+    const copying = Boolean(templateLesson) && !editing;
+    const recents = recentStudents(4);
+    const selectedStudentId = lesson?.studentId || templateLesson?.studentId || presetStudentId || recents[0]?.id || state.students[0].id;
+    const defaultStudent = studentById(selectedStudentId);
+    const teacherDefaults = normalizeTeacherProfile(state.teacherProfile);
+    const hasStudentLessonSettings = Boolean(latestLessonForStudent(selectedStudentId, lesson?.id));
+    const copiedDate = templateLesson ? addDays(templateLesson.date, 7) : null;
+    const initialDate = lesson?.date || copiedDate || preset.date || ui.selectedDate || todayISO();
+    const startTime = lesson?.startTime || templateLesson?.startTime || preset.startTime || "10:00";
+    const endTime = lesson?.endTime || templateLesson?.endTime || addMinutes(startTime, defaultStudent?.defaultDuration || teacherDefaults.defaultDuration || 60);
+    const initialMode = lesson?.mode || templateLesson?.mode || (!hasStudentLessonSettings && teacherDefaults.defaultLessonMode) || "inPerson";
+    const initialLocation = lesson?.location ?? templateLesson?.location ?? (!hasStudentLessonSettings ? teacherDefaults.defaultLocation : "");
+    const initialSubject = lesson?.subject || templateLesson?.subject || defaultStudent?.subject || "";
+    const initialNotes = lesson?.notes || "";
+
+    openSheet(editing ? "編輯課程" : (copying ? "複製課程" : "新增課程"), `
+      <form id="lesson-form" class="form-grid" novalidate>
+        ${editing ? "" : `<div class="field"><label>最近學生</label><div class="recent-student-row">${recents.map(s => `<button class="recent-student-chip ${s.id === selectedStudentId ? "active" : ""}" type="button" data-recent-student="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(s.subject)}</button>`).join("")}</div></div>`}
+        <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId">${state.students.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
+        ${editing ? "" : `<div id="last-lesson-template"></div>`}
+        <div class="field"><label for="lesson-subject">科目 *</label><input id="lesson-subject" name="subject" value="${escapeHtml(initialSubject)}" required /></div>
+        <div class="field"><label for="lesson-date">開始日期 *</label><input id="lesson-date" name="date" type="date" value="${initialDate}" required /></div>
+        <div class="form-row"><div class="field"><label for="start-time">開始時間 *</label><input id="start-time" name="startTime" type="time" value="${startTime}" required /></div><div class="field"><label for="end-time">結束時間 *</label><input id="end-time" name="endTime" type="time" value="${endTime}" required /></div></div>
+        <div class="field"><label>課程形式</label><div class="segmented"><label><input type="radio" name="mode" value="inPerson" ${initialMode === "inPerson" ? "checked" : ""}><span>實體</span></label><label><input type="radio" name="mode" value="online" ${initialMode === "online" ? "checked" : ""}><span>線上</span></label></div></div>
+        <div class="field"><label for="location">地點或線上連結</label><input id="location" name="location" value="${escapeHtml(initialLocation)}" placeholder="例如：學生家、Google Meet" />
+          <div class="quick-chips" aria-label="常用地點">
+            <button class="quick-chip" type="button" data-location-chip="學生家" data-mode="inPerson">學生家</button>
+            <button class="quick-chip" type="button" data-location-chip="老師家" data-mode="inPerson">老師家</button>
+            <button class="quick-chip" type="button" data-location-chip="Google Meet" data-mode="online">Google Meet</button>
+            <button class="quick-chip" type="button" data-location-chip="Zoom" data-mode="online">Zoom</button>
+          </div>
+        </div>
+        ${editing ? "" : `<div class="field"><label>排課方式</label><div class="segmented"><label><input type="radio" name="repeatType" value="once" checked><span>單次</span></label><label><input type="radio" name="repeatType" value="weekly"><span>每週固定</span></label></div></div>
+        <div id="repeat-panel" class="repeat-panel">
+          <div class="field"><label>每週上課日</label><div class="weekday-options">${[1,2,3,4,5,6,7].map(day => `<label class="weekday-option"><input type="checkbox" name="repeatWeekday" value="${day}" ${day === weekdayNumber(initialDate) ? "checked" : ""}><span>${weekdayName(day)}</span></label>`).join("")}</div></div>
+          <div class="field"><label for="repeat-count">預計堂數 *</label><input id="repeat-count" name="repeatCount" type="number" min="1" max="100" step="1" value="12" /><div class="repeat-presets" style="margin-top:7px"><button type="button" class="repeat-preset" data-repeat-count="8">8 堂</button><button type="button" class="repeat-preset active" data-repeat-count="12">12 堂</button><button type="button" class="repeat-preset" data-repeat-count="24">24 堂</button></div></div>
+          <div class="toggle-row"><div><strong>衝堂時往後補足</strong><div class="lesson-meta">跳過該日期，維持相同星期與時間補足原定堂數</div></div><label class="toggle"><input id="auto-supplement" name="autoSupplement" type="checkbox" checked><span class="slider"></span></label></div>
+          <div id="repeat-summary" class="repeat-summary" aria-live="polite"></div>
+          <div id="repeat-conflicts" class="conflict-panel" aria-live="polite"></div>
+          <div id="partial-choice" class="partial-choice"><p>可回去修改日期、星期或時間；若仍要繼續，請明確選擇只建立未衝突堂數。</p><label class="inline-check"><input id="confirm-partial" name="confirmPartial" type="checkbox"><span id="partial-choice-label">我確認只建立未衝突堂數</span></label></div>
+        </div>`}
+        <div class="field"><label for="lesson-notes">備註</label><textarea id="lesson-notes" name="notes">${escapeHtml(initialNotes)}</textarea></div>
+        <div class="form-error" data-error="form"></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">${editing ? "儲存修改" : (copying ? "複製這堂課" : "建立課程")}</button></div>
+      </form>`, root => {
+        const form = $("#lesson-form", root);
+        const studentSelect = $("#lesson-student", root);
+        const dateInput = $("#lesson-date", root);
+        let weekdayTouched = false;
+        let currentRepeatPlan = null;
+        let isSubmitting = false;
+
+        const selectRecentChip = studentId => {
+          $$('[data-recent-student]', root).forEach(button => button.classList.toggle("active", button.dataset.recentStudent === studentId));
+        };
+
+        const updateLastLessonTemplate = () => {
+          const container = $("#last-lesson-template", root);
+          if (!container) return;
+          const recent = latestLessonForStudent(studentSelect.value, lesson?.id);
+          if (!recent) { container.innerHTML = ""; return; }
+          const place = recent.location || (recent.mode === "online" ? "線上" : "未填地點");
+          container.innerHTML = `<div class="copy-template"><div class="copy-template-text"><strong>套用上一堂設定</strong><span>${formatShortDate(recent.date)} · ${recent.startTime}–${recent.endTime} · ${escapeHtml(place)}</span></div><button type="button" class="btn btn-soft" data-copy-last="${recent.id}">套用</button></div>`;
+          const button = $('[data-copy-last]', container);
+          button?.addEventListener("click", () => {
+            $("#lesson-subject", root).value = recent.subject;
+            $("#start-time", root).value = recent.startTime;
+            $("#end-time", root).value = recent.endTime;
+            $("#location", root).value = recent.location || "";
+            const modeInput = $(`input[name="mode"][value="${recent.mode}"]`, root);
+            if (modeInput) modeInput.checked = true;
+            toast("已套用上一堂的時間、形式與地點");
+            updateRepeatSummary();
+          });
+        };
+
+        const applyStudentDefaults = (copyRecent = true) => {
+          const s = studentById(studentSelect.value);
+          if (!s) return;
+          $("#lesson-subject", root).value = s.subject;
+          const recent = latestLessonForStudent(s.id, lesson?.id);
+          if (recent && !editing && copyRecent) {
+            $("#location", root).value = recent.location || "";
+            const modeInput = $(`input[name="mode"][value="${recent.mode}"]`, root);
+            if (modeInput) modeInput.checked = true;
+          } else if (!editing && !copying) {
+            $("#location", root).value = teacherDefaults.defaultLocation || "";
+            const teacherMode = teacherDefaults.defaultLessonMode || "inPerson";
+            const modeInput = $(`input[name="mode"][value="${teacherMode}"]`, root);
+            if (modeInput) modeInput.checked = true;
+          }
+          if (!editing && !copying) {
+            const start = $("#start-time", root).value;
+            $("#end-time", root).value = addMinutes(start, s.defaultDuration || teacherDefaults.defaultDuration || 60);
+          }
+          selectRecentChip(s.id);
+          updateLastLessonTemplate();
+          updateRepeatSummary();
+        };
+
+        const repeatPanel = $("#repeat-panel", root);
+        const updateRepeatSummary = () => {
+          if (!repeatPanel) return;
+          const type = new FormData(form).get("repeatType");
+          repeatPanel.classList.toggle("open", type === "weekly");
+          if (type !== "weekly") {
+            currentRepeatPlan = null;
+            return;
+          }
+          const weekdays = $$('input[name="repeatWeekday"]:checked', root).map(input => Number(input.value));
+          const targetCount = Number($("#repeat-count", root).value);
+          const autoSupplement = $("#auto-supplement", root).checked;
+          const baseLesson = {
+            studentId: studentSelect.value,
+            subject: $("#lesson-subject", root).value.trim(),
+            date: dateInput.value,
+            startTime: $("#start-time", root).value,
+            endTime: $("#end-time", root).value,
+          };
+          currentRepeatPlan = generateRecurringLessonPlan({
+            startDate: dateInput.value,
+            weekdays,
+            targetCount,
+            baseLesson,
+          }, state.lessons, { autoSupplement, maxWeeks: 104 });
+          const daysText = weekdays.map(day => `週${weekdayName(day)}`).join("、") || "尚未選擇";
+          const summary = $("#repeat-summary", root);
+          const conflictCount = currentRepeatPlan.skipped.length;
+          const acceptedCount = currentRepeatPlan.accepted.length;
+          const normalDates = currentRepeatPlan.accepted.filter(candidate => !currentRepeatPlan.supplemented.includes(candidate)).map(candidate => formatShortDate(candidate.date));
+          const skippedDates = currentRepeatPlan.skipped.map(item => formatShortDate(item.candidate.date));
+          const supplementedDates = currentRepeatPlan.supplemented.map(candidate => formatShortDate(candidate.date));
+          const lastText = currentRepeatPlan.lastDate ? formatDate(currentRepeatPlan.lastDate) : "尚未產生";
+          const planText = autoSupplement
+            ? `將跳過衝突日期並往後補排；最後${currentRepeatPlan.limitReached ? `只能建立 ${acceptedCount} 堂` : `仍會建立 ${acceptedCount} 堂`}。`
+            : `自動補排已關閉；目前只可建立 ${acceptedCount} 堂。`;
+          summary.innerHTML = `<strong>${daysText} ${escapeHtml(baseLesson.startTime || "--:--")}</strong><br>原定 <strong>${Number.isInteger(targetCount) && targetCount > 0 ? targetCount : 0}</strong> 堂 · <strong>${conflictCount}</strong> 堂發生衝突<br>${planText}<br>最後一堂：${escapeHtml(lastText)}
+            <details class="repeat-plan-details"><summary>查看排課日期</summary><div class="repeat-plan-dates">正常建立：${normalDates.length ? escapeHtml(normalDates.join("、")) : "無"}<br>跳過衝突：${skippedDates.length ? escapeHtml(skippedDates.join("、")) : "無"}<br>往後補上：${supplementedDates.length ? escapeHtml(supplementedDates.join("、")) : "無"}</div></details>`;
+
+          const conflictPanel = $("#repeat-conflicts", root);
+          conflictPanel.classList.toggle("visible", conflictCount > 0);
+          conflictPanel.innerHTML = conflictCount ? `<strong>有 ${conflictCount} 個時段與既有課程衝突</strong><ul class="conflict-list">${currentRepeatPlan.skipped.map(item => {
+            const message = formatConflictMessage(item);
+            return `<li class="conflict-item"><span>${escapeHtml(message.dateText)} ${escapeHtml(message.candidateTime)}</span><span>${escapeHtml(message.detail)}</span></li>`;
+          }).join("")}</ul>` : "";
+
+          const partialChoice = $("#partial-choice", root);
+          const showPartial = !autoSupplement && conflictCount > 0;
+          partialChoice.classList.toggle("visible", showPartial);
+          $("#partial-choice-label", root).textContent = `我確認：預計 ${targetCount || 0} 堂，將只建立 ${acceptedCount} 堂`;
+          if (!showPartial) $("#confirm-partial", root).checked = false;
+        };
+
+        studentSelect.addEventListener("change", () => applyStudentDefaults(true));
+        $$('[data-recent-student]', root).forEach(button => button.addEventListener("click", () => {
+          studentSelect.value = button.dataset.recentStudent;
+          applyStudentDefaults(true);
+        }));
+        $$('[data-location-chip]', root).forEach(button => button.addEventListener("click", () => {
+          $("#location", root).value = button.dataset.locationChip || "";
+          const modeInput = $(`input[name="mode"][value="${button.dataset.mode}"]`, root);
+          if (modeInput) modeInput.checked = true;
+        }));
+        $("#start-time", root).addEventListener("change", () => {
+          if (!editing && !copying) {
+            const s = studentById(studentSelect.value);
+            $("#end-time", root).value = addMinutes($("#start-time", root).value, s?.defaultDuration || teacherDefaults.defaultDuration || 60);
+          }
+          updateRepeatSummary();
+        });
+        $("#end-time", root).addEventListener("change", updateRepeatSummary);
+
+        if (!editing) {
+          $$('input[name="repeatType"]', root).forEach(el => el.addEventListener("change", updateRepeatSummary));
+          $$('input[name="repeatWeekday"]', root).forEach(el => el.addEventListener("change", () => { weekdayTouched = true; updateRepeatSummary(); }));
+          dateInput.addEventListener("change", () => {
+            if (!weekdayTouched) {
+              $$('input[name="repeatWeekday"]', root).forEach(input => { input.checked = Number(input.value) === weekdayNumber(dateInput.value); });
+            }
+            updateRepeatSummary();
+          });
+          $("#repeat-count", root).addEventListener("input", () => {
+            $$('[data-repeat-count]', root).forEach(button => button.classList.toggle("active", Number(button.dataset.repeatCount) === Number($("#repeat-count", root).value)));
+            updateRepeatSummary();
+          });
+          $("#auto-supplement", root).addEventListener("change", updateRepeatSummary);
+          $("#lesson-subject", root).addEventListener("input", updateRepeatSummary);
+          $$('[data-repeat-count]', root).forEach(button => button.addEventListener("click", () => {
+            $$('[data-repeat-count]', root).forEach(item => item.classList.toggle("active", item === button));
+            $("#repeat-count", root).value = button.dataset.repeatCount;
+            updateRepeatSummary();
+          }));
+        }
+
+        updateLastLessonTemplate();
+        updateRepeatSummary();
+
+        form.addEventListener("submit", e => {
+          e.preventDefault();
+          const fd = new FormData(form);
+          const candidate = {
+            studentId: String(fd.get("studentId")), subject: String(fd.get("subject") || "").trim(), date: String(fd.get("date")), startTime: String(fd.get("startTime")), endTime: String(fd.get("endTime")),
+          };
+          const error = $('[data-error="form"]', form); error.textContent = "";
+          if (!candidate.studentId || !candidate.subject || !candidate.date || !candidate.startTime || !candidate.endTime) { error.textContent = "請完成所有必填欄位"; return; }
+          if (timeToMinutes(candidate.endTime) <= timeToMinutes(candidate.startTime)) { error.textContent = "結束時間必須晚於開始時間"; return; }
+          const now = new Date().toISOString();
+          const base = {
+            id: lesson?.id || uid("lesson"), ...candidate, mode: fd.get("mode"), location: String(fd.get("location") || "").trim(), recurrenceGroupId: lesson?.recurrenceGroupId || null, status: lesson?.status || "scheduled", startedAt: lesson?.startedAt || null, recordId: lesson?.recordId || null, notes: String(fd.get("notes") || "").trim(), createdAt: lesson?.createdAt || now, updatedAt: now,
+          };
+          if (editing) {
+            if (hasScheduleConflict(base, lesson.id)) { error.textContent = "此時段與其他課程重疊，請調整時間"; return; }
+            state.lessons = state.lessons.map(l => l.id === lesson.id ? base : l);
+            saveData(); closeSheet(); ui.tab = "schedule"; ui.studentDetailId = null; ui.selectedDate = base.date; render(); toast("課程已更新");
+            return;
+          }
+
+          const repeatType = fd.get("repeatType");
+          if (repeatType === "weekly") {
+            const weekdays = fd.getAll("repeatWeekday").map(Number);
+            const targetCount = Number(fd.get("repeatCount"));
+            const autoSupplement = fd.get("autoSupplement") === "on";
+            if (!weekdays.length) { error.textContent = "請至少選擇一個每週上課日"; return; }
+            if (!Number.isInteger(targetCount) || targetCount < 1 || targetCount > 100) { error.textContent = "預計堂數請輸入 1～100 的整數"; return; }
+            currentRepeatPlan = generateRecurringLessonPlan({
+              startDate: base.date,
+              weekdays,
+              targetCount,
+              baseLesson: base,
+            }, state.lessons, { autoSupplement, maxWeeks: 104 });
+            updateRepeatSummary();
+            if (currentRepeatPlan.limitReached) {
+              error.textContent = `已搜尋 104 週，仍只能安排 ${currentRepeatPlan.accepted.length} 堂，請修改排課條件`;
+              return;
+            }
+            if (!currentRepeatPlan.accepted.length) { error.textContent = "所有固定日期都與既有課程衝突，沒有可建立的課程"; return; }
+            if (!autoSupplement && currentRepeatPlan.skipped.length) {
+              if (fd.get("confirmPartial") !== "on") {
+                error.textContent = `請確認「預計 ${targetCount} 堂，將只建立 ${currentRepeatPlan.accepted.length} 堂」後再儲存`;
+                return;
+              }
+              if (!confirm(`預計 ${targetCount} 堂，將只建立 ${currentRepeatPlan.accepted.length} 堂。確定繼續嗎？`)) return;
+            }
+            if (isSubmitting) return;
+            isSubmitting = true;
+            const submitButton = $('button[type="submit"]', form);
+            submitButton.disabled = true;
+            const created = materializeRecurringLessons(base, currentRepeatPlan.accepted);
+            const previousLessons = state.lessons;
+            try {
+              state.lessons = [...previousLessons, ...created];
+              saveData();
+              closeSheet();
+              ui.tab = "schedule";
+              ui.studentDetailId = null;
+              ui.selectedDate = created[0].date;
+              render();
+              toast(currentRepeatPlan.skipped.length ? `已跳過 ${currentRepeatPlan.skipped.length} 個衝突時段並建立 ${created.length} 堂` : `已建立 ${created.length} 堂固定課程`);
+            } catch (err) {
+              state.lessons = previousLessons;
+              isSubmitting = false;
+              submitButton.disabled = false;
+              error.textContent = err.message || "固定課程建立失敗，未寫入任何課程";
+            }
+            return;
+          }
+
+          const single = { ...base, id: uid("lesson"), recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null };
+          if (hasScheduleConflict(single)) { error.textContent = "此時段與其他課程重疊，請調整時間"; return; }
+          state.lessons.push(single);
+          saveData(); closeSheet(); ui.tab = "schedule"; ui.studentDetailId = null; ui.selectedDate = single.date; render(); toast(copying ? "課程已複製到新的日期" : "課程已新增");
+        });
+      });
+  }
+
+  function completeLesson(lesson, status, deductLesson, note) {
+    const student = studentById(lesson.studentId);
+    if (!student) throw new Error("找不到學生資料");
+    const existing = recordByLessonId(lesson.id);
+    const previousDeduct = existing?.deductLesson ? 1 : 0;
+    const nextDeduct = deductLesson ? 1 : 0;
+    const delta = nextDeduct - previousDeduct;
+    if (student.billingType === "package" && delta > 0 && calculateRemainingLessons(student) <= 0) {
+      throw new Error("此學生已沒有剩餘堂數，請先調整堂數或關閉扣堂");
+    }
+    student.usedLessons = Math.max(0, student.usedLessons + delta);
+    student.updatedAt = new Date().toISOString();
+    const now = new Date().toISOString();
+    let record;
+    if (existing) {
+      existing.status = status;
+      existing.deductLesson = deductLesson;
+      existing.note = note;
+      existing.updatedAt = now;
+      record = existing;
+    } else {
+      record = { id: uid("record"), lessonId: lesson.id, studentId: lesson.studentId, status, deductLesson, note, recordedAt: now, updatedAt: now };
+      state.lessonRecords.push(record);
+    }
+    lesson.status = status;
+    lesson.recordId = record.id;
+    lesson.updatedAt = now;
+    lesson.notes = note || lesson.notes;
+    saveData();
+  }
+
+  function recordSheet(lesson) {
+    const existing = recordByLessonId(lesson.id);
+    const initialStatus = existing?.status || (lesson.status === "inProgress" ? "completed" : (STATUS_LABELS[lesson.status] ? lesson.status : "completed"));
+    openSheet(existing ? "修改上課紀錄" : "完成課程", `
+      <form id="record-form" class="form-grid">
+        <div class="field"><label>課程結果</label><div class="status-options">${["completed","studentLeave","teacherLeave","absent","cancelled","rescheduled"].map(status => `<label class="status-option"><input type="radio" name="status" value="${status}" ${initialStatus === status ? "checked" : ""}><span>${STATUS_LABELS[status]}</span></label>`).join("")}</div></div>
+        <div class="toggle-row"><div><strong>扣除一堂</strong><div class="lesson-meta">可依你的請假規則調整</div></div><label class="toggle"><input id="deduct-toggle" name="deductLesson" type="checkbox" ${existing ? (existing.deductLesson ? "checked" : "") : (DEFAULT_DEDUCT[initialStatus] ? "checked" : "")}><span class="slider"></span></label></div>
+        <div class="field"><label for="record-note">課堂備註</label><textarea id="record-note" name="note" placeholder="今天完成了什麼、下次要注意什麼…">${escapeHtml(existing?.note || lesson.notes || "")}</textarea></div>
+        <div class="form-error" data-error="form"></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">儲存紀錄</button></div>
+      </form>`, root => {
+        const form = $("#record-form", root);
+        const toggle = $("#deduct-toggle", root);
+        $$('input[name="status"]', root).forEach(radio => radio.addEventListener("change", () => { toggle.checked = DEFAULT_DEDUCT[radio.value]; }));
+        form.addEventListener("submit", e => {
+          e.preventDefault();
+          const fd = new FormData(form);
+          try {
+            completeLesson(lesson, String(fd.get("status")), fd.get("deductLesson") === "on", String(fd.get("note") || "").trim());
+            closeSheet(); render(); toast(existing ? "紀錄已更新，堂數已重新計算" : "課程紀錄已完成");
+          } catch (err) {
+            $('[data-error="form"]', form).textContent = err.message || "儲存失敗";
+          }
+        });
+      });
+  }
+
+  function quickCompleteLesson(id) {
+    const lesson = lessonById(id);
+    if (!lesson) return;
+    const student = studentById(lesson.studentId);
+    try {
+      completeLesson(lesson, "completed", true, recordByLessonId(lesson.id)?.note || lesson.notes || "");
+      render();
+      toast(student?.billingType === "package" ? "已記錄完成並扣除 1 堂" : "已記錄完成");
+    } catch (err) {
+      toast(err.message || "無法完成課程", "error");
+      recordSheet(lesson);
+    }
+  }
+
+  function startLesson(id) {
+    const lesson = lessonById(id);
+    if (!lesson || lesson.status !== "scheduled") return;
+    lesson.status = "inProgress";
+    lesson.startedAt = new Date().toISOString();
+    lesson.updatedAt = lesson.startedAt;
+    saveData(); render(); toast("已開始上課");
+  }
+
+  function exportTimestamp(date = new Date()) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}`;
+  }
+
+  function downloadBlobFile(parts, type, filename) {
+    const blob = new Blob(parts, { type });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    try {
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+    } finally {
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  }
+
+  function downloadJsonFile(data, filename) {
+    downloadBlobFile([JSON.stringify(data, null, 2)], "application/json;charset=utf-8", filename);
+  }
+
+  function escapeCsvCell(value) {
+    const text = value == null ? "" : String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  function downloadCsvFile(rows, filename) {
+    const csv = rows.map(row => row.map(escapeCsvCell).join(",")).join("\r\n");
+    downloadBlobFile(["\ufeff", csv], "text/csv;charset=utf-8", filename);
+  }
+
+  function exportJsonBackup() {
+    try {
+      const payload = {
+        version: APP_VERSION,
+        exportedAt: new Date().toISOString(),
+        teacherProfile: normalizeTeacherProfile(state.teacherProfile),
+        students: state.students,
+        lessons: state.lessons,
+        lessonRecords: state.lessonRecords,
+      };
+      downloadJsonFile(payload, `小課表完整備份_${exportTimestamp()}.json`);
+      toast("完整 JSON 備份已下載");
+    } catch (err) {
+      console.error("JSON 匯出失敗", err);
+      toast(`JSON 匯出失敗：${err.message || "無法建立檔案"}`, "error");
+    }
+  }
+
+  function exportLessonCsv() {
+    try {
+      const headers = ["日期", "星期", "開始時間", "結束時間", "學生姓名", "科目", "授課方式", "地點／連結", "課程狀態", "是否扣堂", "課堂備註", "每堂費用"];
+      const sortedLessons = [...state.lessons].sort((a, b) => {
+        const dateOrder = a.date.localeCompare(b.date);
+        return dateOrder || a.startTime.localeCompare(b.startTime);
+      });
+      const rows = sortedLessons.map(lesson => {
+        const student = studentById(lesson.studentId) || { name: "已刪除學生", pricePerLesson: "" };
+        const record = recordByLessonId(lesson.id);
+        return [
+          lesson.date,
+          `星期${weekdayName(weekdayNumber(lesson.date))}`,
+          lesson.startTime,
+          lesson.endTime,
+          student.name,
+          lesson.subject,
+          lesson.mode === "online" ? "線上" : "實體",
+          lesson.location || "",
+          STATUS_LABELS[lesson.status] || lesson.status,
+          record?.deductLesson ? "是" : "否",
+          record?.note || lesson.notes || "",
+          student.pricePerLesson ?? "",
+        ];
+      });
+      downloadCsvFile([headers, ...rows], `小課表課程明細_${todayISO()}.csv`);
+      toast("課程 CSV 已下載");
+    } catch (err) {
+      console.error("CSV 匯出失敗", err);
+      toast(`CSV 匯出失敗：${err.message || "無法建立檔案"}`, "error");
+    }
+  }
+
+  function clearAllData() {
+    if (!confirm("確定要清除全部資料嗎？此操作無法復原。")) return;
+    if (!confirm("最後確認：學生、課程與紀錄都會被刪除。")) return;
+    state = { teacherProfile: defaultTeacherProfile(), students: [], lessons: [], lessonRecords: [], version: APP_VERSION };
+    saveData(); ui = createUIState(); render(); toast("資料已清除");
+  }
+
+  function resetDemo() {
+    if (!confirm("重新載入示範資料會覆蓋目前內容，確定繼續嗎？")) return;
+    state = createDemoData(); saveData(); ui = createUIState(); render(); toast("示範資料已重新載入");
+  }
+
+  document.addEventListener("click", e => {
+    const tab = e.target.closest("[data-tab]");
+    if (tab) {
+      ui.tab = tab.dataset.tab; ui.studentDetailId = null; render(); window.scrollTo({ top: 0, behavior: "smooth" }); return;
+    }
+    const calendarView = e.target.closest("[data-calendar-view]");
+    if (calendarView) {
+      ui.calendarView = calendarView.dataset.calendarView === "month" ? "month" : "week";
+      saveCalendarView(ui.calendarView);
+      render();
+      return;
+    }
+    const date = e.target.closest("[data-date]");
+    if (date) { ui.selectedDate = date.dataset.date; render(); return; }
+    const actionEl = e.target.closest("[data-action]");
+    if (!actionEl) return;
+    const action = actionEl.dataset.action;
+    const id = actionEl.dataset.id;
+    if (action === "notify") toast("通知功能會在後續版本加入");
+    else if (action === "add-student") studentForm();
+    else if (action === "edit-student") studentForm(studentById(id));
+    else if (action === "edit-teacher") teacherProfileForm();
+    else if (action === "install-app") installApp();
+    else if (action === "add-lesson") lessonForm(null, actionEl.dataset.studentId || null);
+    else if (action === "add-calendar-lesson") {
+      const date = actionEl.dataset.calendarDate || ui.selectedDate;
+      ui.selectedDate = date;
+      lessonForm(null, null, null, { date, startTime: actionEl.dataset.startTime || null });
+    }
+    else if (action === "course-detail") courseDetailSheet(lessonById(id));
+    else if (action === "edit-lesson") lessonForm(lessonById(id));
+    else if (action === "copy-lesson") { const source = lessonById(id); if (source) lessonForm(null, source.studentId, source); }
+    else if (action === "start-lesson") { closeSheet(); startLesson(id); }
+    else if (action === "quick-complete") { closeSheet(); quickCompleteLesson(id); }
+    else if (action === "lesson-more" || action === "complete-lesson" || action === "edit-record") { const lesson = lessonById(id); if (lesson) recordSheet(lesson); }
+    else if (action === "open-student") { ui.studentDetailId = id; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (action === "back-students") { ui.studentDetailId = null; ui.tab = "students"; render(); }
+    else if (action === "date-prev") { ui.selectedDate = addDays(ui.selectedDate, -1); render(); }
+    else if (action === "date-next") { ui.selectedDate = addDays(ui.selectedDate, 1); render(); }
+    else if (action === "calendar-prev") { ui.selectedDate = ui.calendarView === "month" ? addMonths(ui.selectedDate, -1) : addDays(ui.selectedDate, -7); render(); }
+    else if (action === "calendar-next") { ui.selectedDate = ui.calendarView === "month" ? addMonths(ui.selectedDate, 1) : addDays(ui.selectedDate, 7); render(); }
+    else if (action === "calendar-today") { ui.selectedDate = todayISO(); render(); }
+    else if (action === "close-sheet") closeSheet();
+    else if (action === "export-json" || action === "export-data") exportJsonBackup();
+    else if (action === "export-csv") exportLessonCsv();
+    else if (action === "import-data") $("#import-file")?.click();
+    else if (action === "clear-data") clearAllData();
+    else if (action === "reset-demo") resetDemo();
+  });
+
+  document.addEventListener("input", e => {
+    if (e.target.id === "student-search") {
+      ui.search = e.target.value;
+      const cursor = e.target.selectionStart;
+      render();
+      const input = $("#student-search");
+      if (input) { input.focus(); input.setSelectionRange(cursor, cursor); }
+    }
+  });
+
+  document.addEventListener("change", e => {
+    if (e.target.id === "import-file") {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          const normalized = normalizeStoredData(parsed);
+          if (!validateImportedData(normalized)) throw new Error("資料格式不正確");
+          state = normalized;
+          saveData(); ui = createUIState(); render(); toast("資料匯入成功");
+        } catch (err) {
+          toast(`匯入失敗：${err.message || "檔案格式錯誤"}`, "error");
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    }
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && $("#overlay-root").children.length) closeSheet();
+  });
+
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    toast("小課表已安裝到手機");
+  });
+
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(err => {
+        console.warn("Service Worker 註冊失敗", err);
+      });
+    });
+  }
+
+  render();
+})();
+
+</script>
+</body>
+</html>
