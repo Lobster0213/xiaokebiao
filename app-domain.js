@@ -231,6 +231,7 @@
       };
     });
     const lessonIds = new Set(lessons.map(lesson => lesson.id));
+    const lessonsById = new Map(lessons.map(lesson => [lesson.id, lesson]));
 
     const lessonRecords = recordsInput.map((record, index) => {
       if (!record || typeof record !== "object") throw new Error(`第 ${index + 1} 筆課程紀錄格式錯誤`);
@@ -238,8 +239,10 @@
       if (seen.has(`record:${id}`)) throw new Error(`課程紀錄 ID 重複：${id}`);
       seen.add(`record:${id}`);
       const lessonId = assertSafeId(record.lessonId, `課程紀錄 ${id} 的課程`);
-      const studentId = assertSafeId(record.studentId, `課程紀錄 ${id} 的學生`);
-      if (!lessonIds.has(lessonId) || !studentIds.has(studentId)) throw new Error(`課程紀錄 ${id} 參照不存在`);
+      const referencedLesson = lessonsById.get(lessonId);
+      if (!referencedLesson) throw new Error(`課程紀錄 ${id} 參照不存在`);
+      const studentId = record.studentId ? assertSafeId(record.studentId, `課程紀錄 ${id} 的學生`) : "";
+      if (referencedLesson.lessonType !== "trial" && !studentIds.has(studentId)) throw new Error(`課程紀錄 ${id} 參照不存在`);
       return {
         ...record,
         id,

@@ -1078,6 +1078,13 @@ textarea { min-height: 96px; resize: vertical; }
     refund: "退款",
   };
 
+  const TRIAL_RESULT_LABELS = {
+    pending: "待確認",
+    converted: "已轉正式",
+    notContinuing: "未續課",
+    followUp: "待追蹤",
+  };
+
   let invalidStoredData = null;
   let state = loadData();
   let ui = createUIState();
@@ -1373,7 +1380,7 @@ textarea { min-height: 96px; resize: vertical; }
     const dateText = formatDate(skippedItem.candidate.date);
     const candidateTime = `${skippedItem.candidate.startTime}–${skippedItem.candidate.endTime}`;
     const detail = skippedItem.conflicts.map(({ existing }) => {
-      const student = studentById(existing.studentId) || { name: "已刪除學生" };
+      const student = lessonDisplayPerson(existing);
       return `與「${student.name}｜${existing.subject}｜${existing.startTime}–${existing.endTime}」衝突`;
     }).join("；");
     return { dateText, candidateTime, detail };
@@ -1405,6 +1412,10 @@ textarea { min-height: 96px; resize: vertical; }
   function lessonById(id) { return state.lessons.find(l => l.id === id); }
   function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id && !r.deletedAt); }
   function activeLessons() { return state.lessons.filter(lesson => !lesson.deletedAt); }
+  function lessonDisplayPerson(lesson) {
+    if (lesson.lessonType === "trial") return { name: `${lesson.trial?.name || "未命名"}（試教）`, isTrial: true };
+    return studentById(lesson.studentId) || { name: "已刪除學生", isTrial: false };
+  }
 
   function escapeHtml(value = "") {
     return String(value).replace(/[&<>'"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[ch]));
@@ -1474,7 +1485,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function lessonCard(lesson, options = {}) {
-    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const student = lessonDisplayPerson(lesson);
     const place = lesson.location ? lesson.location : (lesson.mode === "online" ? "線上" : "未填地點");
     const meta = `${lesson.subject} · ${lesson.mode === "online" ? "線上" : "實體"} · ${place}`;
     return `
@@ -1688,8 +1699,8 @@ textarea { min-height: 96px; resize: vertical; }
     if (visibleEnd <= visibleStart) return "";
     const top = ((visibleStart - rangeStart) / 60) * WEEK_HOUR_HEIGHT;
     const height = Math.max(26, ((visibleEnd - visibleStart) / 60) * WEEK_HOUR_HEIGHT - 3);
-    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
-    const color = calendarColorIndex(lesson.studentId);
+    const student = lessonDisplayPerson(lesson);
+    const color = calendarColorIndex(lesson.studentId || lesson.trial?.name);
     const cancelled = lesson.status === "cancelled" ? "cancelled" : "";
     const label = `${lesson.startTime} 到 ${lesson.endTime}，${student.name}，${lesson.subject}，${STATUS_LABELS[lesson.status] || lesson.status}`;
     const laneLeft = (lane / laneCount) * 100;
@@ -1999,7 +2010,7 @@ textarea { min-height: 96px; resize: vertical; }
 
   function courseDetailSheet(lesson) {
     if (!lesson) return;
-    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const student = lessonDisplayPerson(lesson);
     const place = lesson.location || (lesson.mode === "online" ? "線上" : "未填地點");
     const primaryAction = lesson.status === "scheduled"
       ? `<button class="btn btn-soft" data-action="start-lesson" data-id="${lesson.id}">開始上課</button><button class="btn btn-primary" data-action="quick-complete" data-id="${lesson.id}">記一堂</button>`
@@ -2010,11 +2021,13 @@ textarea { min-height: 96px; resize: vertical; }
       <section class="detail-hero">
         <div class="record-row"><div><h3 style="margin:0 0 5px">${escapeHtml(student.name)} · ${escapeHtml(lesson.subject)}</h3><div class="lesson-meta">${formatDate(lesson.date)} · ${escapeHtml(lesson.startTime)}–${escapeHtml(lesson.endTime)}</div></div>${statusBadge(lesson.status)}</div>
         <p class="lesson-meta" style="margin:12px 0 0">${lesson.mode === "online" ? "線上" : "實體"} · ${escapeHtml(place)}</p>
+        ${lesson.lessonType === "trial" ? `<p class="lesson-meta" style="margin:7px 0 0">試教結果：${escapeHtml(TRIAL_RESULT_LABELS[lesson.trial?.result] || "待確認")}${lesson.trial?.source ? ` · 來源：${escapeHtml(lesson.trial.source)}` : ""}${lesson.trial?.fee ? ` · ${money(lesson.trial.fee)}` : ""}</p>` : ""}
         ${lesson.notes ? `<p class="lesson-meta" style="margin:7px 0 0">備註：${escapeHtml(lesson.notes)}</p>` : ""}
         ${primaryAction ? `<div class="detail-actions">${primaryAction}</div>` : ""}
         <div class="detail-actions">
           <button class="btn btn-soft" data-action="edit-lesson" data-id="${lesson.id}">編輯課程</button>
           <button class="btn btn-soft" data-action="copy-lesson" data-id="${lesson.id}">複製課程</button>
+          ${lesson.lessonType === "trial" && !lesson.trial?.convertedStudentId ? `<button class="btn btn-primary" style="grid-column:1/-1" data-action="convert-trial" data-id="${lesson.id}">轉為正式學生</button>` : ""}
           <button class="btn btn-ghost" style="grid-column:1/-1" data-action="lesson-more" data-id="${lesson.id}">${lesson.recordId ? "查看／修改上課紀錄" : "完成、請假、改期或取消"}</button>
           <button class="btn btn-danger" style="grid-column:1/-1" data-action="delete-lesson" data-id="${lesson.id}">刪除課程</button>
         </div>
@@ -2076,6 +2089,152 @@ textarea { min-height: 96px; resize: vertical; }
             submitting = false;
             button.disabled = false;
             toast(error.message || "刪除課程失敗", "error");
+          }
+        });
+      });
+  }
+
+  function convertTrialSheet(lesson) {
+    if (!lesson || lesson.lessonType !== "trial" || lesson.trial?.convertedStudentId) return;
+    const defaultDate = addDays(lesson.date, 7);
+    openSheet("轉為正式學生", `
+      <form id="convert-trial-form" class="form-grid" novalidate>
+        <div class="field"><label for="convert-name">姓名 *</label><input id="convert-name" name="name" maxlength="100" value="${escapeHtml(lesson.trial?.name || "")}"></div>
+        <div class="field"><label for="convert-contact">聯絡資訊</label><input id="convert-contact" name="contact" maxlength="300" value="${escapeHtml(lesson.trial?.contact || "")}"></div>
+        <div class="field"><label for="convert-subject">正式科目 *</label><input id="convert-subject" name="subject" maxlength="100" value="${escapeHtml(lesson.subject || "")}"></div>
+        <div class="form-row"><div class="field"><label for="convert-credits">初始堂數 *</label><input id="convert-credits" name="credits" type="number" min="1" max="999" step="1" value="4"></div><div class="field"><label for="convert-price">正式每堂費用</label><input id="convert-price" name="price" type="number" min="0" step="50" value="${lesson.trial?.fee || ""}"></div></div>
+        <div class="toggle-row"><div><strong>將試教計入正式已上堂數</strong><div class="lesson-meta">預設關閉；開啟後會明確扣除 1 堂</div></div><label class="toggle"><input name="includeTrial" type="checkbox"><span class="slider"></span></label></div>
+        <div class="toggle-row"><div><strong>建立每週固定課程</strong><div class="lesson-meta">沿用試教的星期與時間，衝堂時往後補足</div></div><label class="toggle"><input id="convert-create-schedule" name="createSchedule" type="checkbox" checked><span class="slider"></span></label></div>
+        <div id="convert-schedule-fields" class="form-grid">
+          <div class="field"><label for="convert-date">正式課開始日期</label><input id="convert-date" name="date" type="date" value="${defaultDate}"></div>
+          <div class="form-row"><div class="field"><label for="convert-start">固定開始時間</label><input id="convert-start" name="startTime" type="time" value="${lesson.startTime}"></div><div class="field"><label for="convert-end">固定結束時間</label><input id="convert-end" name="endTime" type="time" value="${lesson.endTime}"></div></div>
+          <div class="field"><label for="convert-count">先排幾堂（1～100）</label><input id="convert-count" name="scheduleCount" type="number" min="1" max="100" step="1" value="4"></div>
+        </div>
+        <div class="form-error" data-error="form"></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">建立正式學生</button></div>
+      </form>`, root => {
+        const form = $("#convert-trial-form", root);
+        const scheduleToggle = $("#convert-create-schedule", root);
+        scheduleToggle.addEventListener("change", () => {
+          $("#convert-schedule-fields", root).style.display = scheduleToggle.checked ? "grid" : "none";
+        });
+        let submitting = false;
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (submitting) return;
+          const fd = new FormData(form);
+          const name = String(fd.get("name") || "").trim();
+          const subject = String(fd.get("subject") || "").trim();
+          const credits = Number(fd.get("credits"));
+          const scheduleCount = Number(fd.get("scheduleCount"));
+          const createSchedule = fd.get("createSchedule") === "on";
+          const startTime = String(fd.get("startTime") || "");
+          const endTime = String(fd.get("endTime") || "");
+          const error = $('[data-error="form"]', form);
+          error.textContent = "";
+          if (!name || !subject) { error.textContent = "請填寫姓名與正式科目"; return; }
+          if (!Number.isInteger(credits) || credits < 1 || credits > 999) { error.textContent = "初始堂數必須是 1～999 的整數"; return; }
+          if (createSchedule && (!Number.isInteger(scheduleCount) || scheduleCount < 1 || scheduleCount > 100)) { error.textContent = "排課堂數必須是 1～100 的整數"; return; }
+          if (createSchedule && timeToMinutes(endTime) <= timeToMinutes(startTime)) { error.textContent = "結束時間必須晚於開始時間"; return; }
+          submitting = true;
+          const submitButton = $('button[type="submit"]', form);
+          submitButton.disabled = true;
+          try {
+            const now = new Date().toISOString();
+            const student = {
+              id: uid("stu"),
+              name,
+              subject,
+              phone: "",
+              contactNote: String(fd.get("contact") || "").trim(),
+              billingType: "package",
+              totalLessons: credits,
+              usedLessons: 0,
+              pricePerLesson: fd.get("price") ? Number(fd.get("price")) : null,
+              defaultDuration: Math.max(30, timeToMinutes(lesson.endTime) - timeToMinutes(lesson.startTime)),
+              notes: `由 ${formatDate(lesson.date)} 試教轉為正式學生`,
+              isDemoData: Boolean(lesson.isDemoData),
+              createdAt: now,
+              updatedAt: now,
+            };
+            state.students.push(student);
+            Domain.addCreditTransaction(state, {
+              id: uid("credit"),
+              studentId: student.id,
+              type: "purchase",
+              amount: credits,
+              reason: "試教轉正式的初始堂數",
+              createdAt: now,
+              isDemoData: Boolean(lesson.isDemoData),
+            });
+            if (fd.get("includeTrial") === "on") {
+              lesson.studentId = student.id;
+              let trialRecord = recordByLessonId(lesson.id);
+              if (!trialRecord) {
+                trialRecord = { id: uid("record"), lessonId: lesson.id, studentId: student.id, status: "completed", deductLesson: true, note: "試教轉正式時明確計入堂數", deletedAt: null, recordedAt: now, updatedAt: now, isDemoData: Boolean(lesson.isDemoData) };
+                state.lessonRecords.push(trialRecord);
+                lesson.recordId = trialRecord.id;
+                lesson.status = "completed";
+              } else {
+                trialRecord.studentId = student.id;
+                trialRecord.deductLesson = true;
+                trialRecord.updatedAt = now;
+              }
+              Domain.addCreditTransaction(state, {
+                id: uid("credit"),
+                studentId: student.id,
+                type: "deduction",
+                amount: -1,
+                reason: "老師選擇將試教計入正式堂數",
+                relatedLessonId: lesson.id,
+                createdAt: now,
+                isDemoData: Boolean(lesson.isDemoData),
+              });
+              Domain.syncStudentUsedLessons(state, student.id);
+            }
+            if (createSchedule) {
+              const baseLesson = {
+                id: uid("lesson"),
+                studentId: student.id,
+                subject,
+                date: String(fd.get("date")),
+                startTime,
+                endTime,
+                mode: lesson.mode,
+                location: lesson.location,
+                lessonType: "formal",
+                trial: null,
+                recurrenceGroupId: null,
+                status: "scheduled",
+                startedAt: null,
+                recordId: null,
+                notes: "",
+                isDemoData: Boolean(lesson.isDemoData),
+                createdAt: now,
+                updatedAt: now,
+              };
+              const plan = Domain.planRecurrence({
+                startDate: baseLesson.date,
+                weekdays: [weekdayNumber(baseLesson.date)],
+                targetCount: scheduleCount,
+                baseLesson,
+              }, state.lessons, { autoSupplement: true, maxWeeks: 104 });
+              if (plan.limitReached) throw new Error("104 週內無法補足固定課程，請調整日期或時間");
+              state.lessons.push(...materializeRecurringLessons(baseLesson, plan.accepted));
+            }
+            lesson.trial.result = "converted";
+            lesson.trial.convertedStudentId = student.id;
+            lesson.updatedAt = now;
+            saveData();
+            closeSheet();
+            ui.tab = "students";
+            ui.studentDetailId = student.id;
+            render();
+            toast(`已將 ${student.name} 轉為正式學生`);
+          } catch (errorValue) {
+            submitting = false;
+            submitButton.disabled = false;
+            error.textContent = errorValue.message || "轉為正式學生失敗";
           }
         });
       });
@@ -2255,16 +2414,12 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function lessonForm(lesson = null, presetStudentId = null, templateLesson = null, preset = {}) {
-    if (!state.students.length) {
-      toast("請先新增學生", "error");
-      studentForm();
-      return;
-    }
     const editing = Boolean(lesson);
     const copying = Boolean(templateLesson) && !editing;
     const recents = recentStudents(4);
-    const selectedStudentId = lesson?.studentId || templateLesson?.studentId || presetStudentId || recents[0]?.id || state.students[0].id;
+    const selectedStudentId = lesson?.studentId || templateLesson?.studentId || presetStudentId || recents[0]?.id || state.students[0]?.id || "";
     const defaultStudent = studentById(selectedStudentId);
+    const initialLessonType = lesson?.lessonType || templateLesson?.lessonType || (state.students.length ? "formal" : "trial");
     const teacherDefaults = normalizeTeacherProfile(state.teacherProfile);
     const hasStudentLessonSettings = Boolean(latestLessonForStudent(selectedStudentId, lesson?.id));
     const copiedDate = templateLesson ? addDays(templateLesson.date, 7) : null;
@@ -2273,14 +2428,23 @@ textarea { min-height: 96px; resize: vertical; }
     const endTime = lesson?.endTime || templateLesson?.endTime || addMinutes(startTime, defaultStudent?.defaultDuration || teacherDefaults.defaultDuration || 60);
     const initialMode = lesson?.mode || templateLesson?.mode || (!hasStudentLessonSettings && teacherDefaults.defaultLessonMode) || "inPerson";
     const initialLocation = lesson?.location ?? templateLesson?.location ?? (!hasStudentLessonSettings ? teacherDefaults.defaultLocation : "");
-    const initialSubject = lesson?.subject || templateLesson?.subject || defaultStudent?.subject || "";
+    const initialSubject = lesson?.subject || templateLesson?.subject || defaultStudent?.subject || (initialLessonType === "trial" ? "試教" : "");
     const initialNotes = lesson?.notes || "";
 
     openSheet(editing ? "編輯課程" : (copying ? "複製課程" : "新增課程"), `
       <form id="lesson-form" class="form-grid" novalidate>
-        ${editing ? "" : `<div class="field"><label>最近學生</label><div class="recent-student-row">${recents.map(s => `<button class="recent-student-chip ${s.id === selectedStudentId ? "active" : ""}" type="button" data-recent-student="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(s.subject)}</button>`).join("")}</div></div>`}
-        <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId">${state.students.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
-        ${editing ? "" : `<div id="last-lesson-template"></div>`}
+        <div class="field"><label>課程類型</label><div class="segmented"><label><input type="radio" name="lessonType" value="formal" ${initialLessonType === "formal" ? "checked" : ""}><span>正式課程</span></label><label><input type="radio" name="lessonType" value="trial" ${initialLessonType === "trial" ? "checked" : ""}><span>試教課程</span></label></div></div>
+        <div id="formal-lesson-fields">
+          ${editing ? "" : `<div class="field"><label>最近學生</label><div class="recent-student-row">${recents.map(s => `<button class="recent-student-chip ${s.id === selectedStudentId ? "active" : ""}" type="button" data-recent-student="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(s.subject)}</button>`).join("")}</div></div>`}
+          <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId"><option value="">請選擇學生</option>${state.students.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
+          ${editing ? "" : `<div id="last-lesson-template"></div>`}
+        </div>
+        <div id="trial-lesson-fields" class="form-grid">
+          <div class="field"><label for="trial-name">試教學生姓名 *</label><input id="trial-name" name="trialName" maxlength="100" value="${escapeHtml(lesson?.trial?.name || templateLesson?.trial?.name || "")}"></div>
+          <div class="form-row"><div class="field"><label for="trial-fee">試教費用</label><input id="trial-fee" name="trialFee" type="number" min="0" step="50" value="${lesson?.trial?.fee || templateLesson?.trial?.fee || ""}"></div><div class="field"><label for="trial-source">來源</label><input id="trial-source" name="trialSource" maxlength="200" value="${escapeHtml(lesson?.trial?.source || templateLesson?.trial?.source || "")}" placeholder="例如：朋友介紹"></div></div>
+          <div class="field"><label for="trial-contact">聯絡資訊</label><input id="trial-contact" name="trialContact" maxlength="300" value="${escapeHtml(lesson?.trial?.contact || templateLesson?.trial?.contact || "")}" placeholder="電話、LINE 或家長聯絡方式"></div>
+          <div class="field"><label for="trial-result">試教結果</label><select id="trial-result" name="trialResult">${Object.entries(TRIAL_RESULT_LABELS).map(([value, label]) => `<option value="${value}" ${(lesson?.trial?.result || "pending") === value ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+        </div>
         <div class="field"><label for="lesson-subject">科目 *</label><input id="lesson-subject" name="subject" value="${escapeHtml(initialSubject)}" required /></div>
         <div class="field"><label for="lesson-date">開始日期 *</label><input id="lesson-date" name="date" type="date" value="${initialDate}" required /></div>
         <div class="form-row"><div class="field"><label for="start-time">開始時間 *</label><input id="start-time" name="startTime" type="time" value="${startTime}" required /></div><div class="field"><label for="end-time">結束時間 *</label><input id="end-time" name="endTime" type="time" value="${endTime}" required /></div></div>
@@ -2293,7 +2457,7 @@ textarea { min-height: 96px; resize: vertical; }
             <button class="quick-chip" type="button" data-location-chip="Zoom" data-mode="online">Zoom</button>
           </div>
         </div>
-        ${editing ? "" : `<div class="field"><label>排課方式</label><div class="segmented"><label><input type="radio" name="repeatType" value="once" checked><span>單次</span></label><label><input type="radio" name="repeatType" value="weekly"><span>每週固定</span></label></div></div>
+        ${editing ? "" : `<div id="repeat-options"><div class="field"><label>排課方式</label><div class="segmented"><label><input type="radio" name="repeatType" value="once" checked><span>單次</span></label><label><input type="radio" name="repeatType" value="weekly"><span>每週固定</span></label></div></div>
         <div id="repeat-panel" class="repeat-panel">
           <div class="field"><label>每週上課日</label><div class="weekday-options">${[1,2,3,4,5,6,7].map(day => `<label class="weekday-option"><input type="checkbox" name="repeatWeekday" value="${day}" ${day === weekdayNumber(initialDate) ? "checked" : ""}><span>${weekdayName(day)}</span></label>`).join("")}</div></div>
           <div class="field"><label for="repeat-count">預計堂數 *</label><input id="repeat-count" name="repeatCount" type="number" min="1" max="100" step="1" value="12" /><div class="repeat-presets" style="margin-top:7px"><button type="button" class="repeat-preset" data-repeat-count="8">8 堂</button><button type="button" class="repeat-preset active" data-repeat-count="12">12 堂</button><button type="button" class="repeat-preset" data-repeat-count="24">24 堂</button></div></div>
@@ -2301,7 +2465,7 @@ textarea { min-height: 96px; resize: vertical; }
           <div id="repeat-summary" class="repeat-summary" aria-live="polite"></div>
           <div id="repeat-conflicts" class="conflict-panel" aria-live="polite"></div>
           <div id="partial-choice" class="partial-choice"><p>可回去修改日期、星期或時間；若仍要繼續，請明確選擇只建立未衝突堂數。</p><label class="inline-check"><input id="confirm-partial" name="confirmPartial" type="checkbox"><span id="partial-choice-label">我確認只建立未衝突堂數</span></label></div>
-        </div>`}
+        </div></div>`}
         <div class="field"><label for="lesson-notes">備註</label><textarea id="lesson-notes" name="notes">${escapeHtml(initialNotes)}</textarea></div>
         <div class="form-error" data-error="form"></div>
         <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">${editing ? "儲存修改" : (copying ? "複製這堂課" : "建立課程")}</button></div>
@@ -2312,6 +2476,23 @@ textarea { min-height: 96px; resize: vertical; }
         let weekdayTouched = false;
         let currentRepeatPlan = null;
         let isSubmitting = false;
+
+        const updateLessonTypeFields = () => {
+          const lessonType = new FormData(form).get("lessonType");
+          $("#formal-lesson-fields", root).style.display = lessonType === "formal" ? "block" : "none";
+          $("#trial-lesson-fields", root).style.display = lessonType === "trial" ? "grid" : "none";
+          const repeatOptions = $("#repeat-options", root);
+          if (repeatOptions) repeatOptions.style.display = lessonType === "trial" ? "none" : "block";
+          if (lessonType === "trial") {
+            const once = $('input[name="repeatType"][value="once"]', root);
+            if (once) once.checked = true;
+            if (!$("#lesson-subject", root).value.trim()) $("#lesson-subject", root).value = "試教";
+          } else if (!state.students.length) {
+            $('[data-error="form"]', form).textContent = "請先新增正式學生，或改選試教課程";
+          }
+          updateRepeatSummary();
+        };
+        $$('input[name="lessonType"]', root).forEach(input => input.addEventListener("change", updateLessonTypeFields));
 
         const selectRecentChip = studentId => {
           $$('[data-recent-student]', root).forEach(button => button.classList.toggle("active", button.dataset.recentStudent === studentId));
@@ -2457,19 +2638,29 @@ textarea { min-height: 96px; resize: vertical; }
 
         updateLastLessonTemplate();
         updateRepeatSummary();
+        updateLessonTypeFields();
 
         form.addEventListener("submit", e => {
           e.preventDefault();
           const fd = new FormData(form);
+          const lessonType = String(fd.get("lessonType") || "formal");
           const candidate = {
-            studentId: String(fd.get("studentId")), subject: String(fd.get("subject") || "").trim(), date: String(fd.get("date")), startTime: String(fd.get("startTime")), endTime: String(fd.get("endTime")),
+            studentId: lessonType === "trial" ? "" : String(fd.get("studentId") || ""), subject: String(fd.get("subject") || "").trim(), date: String(fd.get("date")), startTime: String(fd.get("startTime")), endTime: String(fd.get("endTime")),
           };
           const error = $('[data-error="form"]', form); error.textContent = "";
-          if (!candidate.studentId || !candidate.subject || !candidate.date || !candidate.startTime || !candidate.endTime) { error.textContent = "請完成所有必填欄位"; return; }
+          const trialName = String(fd.get("trialName") || "").trim();
+          if ((lessonType === "formal" && !candidate.studentId) || (lessonType === "trial" && !trialName) || !candidate.subject || !candidate.date || !candidate.startTime || !candidate.endTime) { error.textContent = "請完成所有必填欄位"; return; }
           if (timeToMinutes(candidate.endTime) <= timeToMinutes(candidate.startTime)) { error.textContent = "結束時間必須晚於開始時間"; return; }
           const now = new Date().toISOString();
           const base = {
-            id: lesson?.id || uid("lesson"), ...candidate, mode: fd.get("mode"), location: String(fd.get("location") || "").trim(), recurrenceGroupId: lesson?.recurrenceGroupId || null, status: lesson?.status || "scheduled", startedAt: lesson?.startedAt || null, recordId: lesson?.recordId || null, notes: String(fd.get("notes") || "").trim(), createdAt: lesson?.createdAt || now, updatedAt: now,
+            id: lesson?.id || uid("lesson"), ...candidate, lessonType, trial: {
+              name: trialName,
+              fee: Number(fd.get("trialFee") || 0),
+              source: String(fd.get("trialSource") || "").trim(),
+              contact: String(fd.get("trialContact") || "").trim(),
+              result: String(fd.get("trialResult") || "pending"),
+              convertedStudentId: lesson?.trial?.convertedStudentId || null,
+            }, mode: fd.get("mode"), location: String(fd.get("location") || "").trim(), recurrenceGroupId: lesson?.recurrenceGroupId || null, status: lesson?.status || "scheduled", startedAt: lesson?.startedAt || null, recordId: lesson?.recordId || null, notes: String(fd.get("notes") || "").trim(), isDemoData: Boolean(lesson?.isDemoData), createdAt: lesson?.createdAt || now, updatedAt: now,
           };
           if (editing) {
             if (hasScheduleConflict(base, lesson.id)) { error.textContent = "此時段與其他課程重疊，請調整時間"; return; }
@@ -2478,7 +2669,7 @@ textarea { min-height: 96px; resize: vertical; }
             return;
           }
 
-          const repeatType = fd.get("repeatType");
+          const repeatType = lessonType === "trial" ? "once" : fd.get("repeatType");
           if (repeatType === "weekly") {
             const weekdays = fd.getAll("repeatWeekday").map(Number);
             const targetCount = Number(fd.get("repeatCount"));
@@ -2565,14 +2756,14 @@ textarea { min-height: 96px; resize: vertical; }
     openSheet(existing ? "修改上課紀錄" : "完成課程", `
       <form id="record-form" class="form-grid">
         <div class="field"><label>課程結果</label><div class="status-options">${["completed","studentLeave","teacherLeave","absent","cancelled","rescheduled"].map(status => `<label class="status-option"><input type="radio" name="status" value="${status}" ${initialStatus === status ? "checked" : ""}><span>${STATUS_LABELS[status]}</span></label>`).join("")}</div></div>
-        <div class="toggle-row"><div><strong>扣除一堂</strong><div class="lesson-meta">可依你的請假規則調整</div></div><label class="toggle"><input id="deduct-toggle" name="deductLesson" type="checkbox" ${existing ? (existing.deductLesson ? "checked" : "") : (DEFAULT_DEDUCT[initialStatus] ? "checked" : "")}><span class="slider"></span></label></div>
+        <div class="toggle-row"><div><strong>扣除一堂</strong><div class="lesson-meta">${lesson.lessonType === "trial" ? "試教預設不扣正式堂數" : "可依你的請假規則調整"}</div></div><label class="toggle"><input id="deduct-toggle" name="deductLesson" type="checkbox" ${lesson.lessonType === "trial" ? "disabled" : (existing ? (existing.deductLesson ? "checked" : "") : (DEFAULT_DEDUCT[initialStatus] ? "checked" : ""))}><span class="slider"></span></label></div>
         <div class="field"><label for="record-note">課堂備註</label><textarea id="record-note" name="note" placeholder="今天完成了什麼、下次要注意什麼…">${escapeHtml(existing?.note || lesson.notes || "")}</textarea></div>
         <div class="form-error" data-error="form"></div>
         <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">儲存紀錄</button></div>
       </form>`, root => {
         const form = $("#record-form", root);
         const toggle = $("#deduct-toggle", root);
-        $$('input[name="status"]', root).forEach(radio => radio.addEventListener("change", () => { toggle.checked = DEFAULT_DEDUCT[radio.value]; }));
+        $$('input[name="status"]', root).forEach(radio => radio.addEventListener("change", () => { toggle.checked = lesson.lessonType === "trial" ? false : DEFAULT_DEDUCT[radio.value]; }));
         form.addEventListener("submit", e => {
           e.preventDefault();
           const fd = new FormData(form);
@@ -2670,7 +2861,9 @@ textarea { min-height: 96px; resize: vertical; }
         return dateOrder || a.startTime.localeCompare(b.startTime);
       });
       const rows = sortedLessons.map(lesson => {
-        const student = studentById(lesson.studentId) || { name: "已刪除學生", pricePerLesson: "" };
+        const student = lesson.lessonType === "trial"
+          ? { name: `${lesson.trial?.name || "未命名"}（試教）`, pricePerLesson: lesson.trial?.fee || "" }
+          : (studentById(lesson.studentId) || { name: "已刪除學生", pricePerLesson: "" });
         const record = recordByLessonId(lesson.id);
         return [
           lesson.date,
@@ -2739,6 +2932,7 @@ textarea { min-height: 96px; resize: vertical; }
     }
     else if (action === "course-detail") courseDetailSheet(lessonById(id));
     else if (action === "delete-lesson") deleteLessonSheet(lessonById(id));
+    else if (action === "convert-trial") convertTrialSheet(lessonById(id));
     else if (action === "edit-lesson") lessonForm(lessonById(id));
     else if (action === "copy-lesson") { const source = lessonById(id); if (source) lessonForm(null, source.studentId, source); }
     else if (action === "start-lesson") { closeSheet(); startLesson(id); }

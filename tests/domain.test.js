@@ -168,6 +168,32 @@ test("deleting a deducted lesson can restore credit and undo safely", () => {
   assert.equal(data.lessons[0].deletedAt, null);
 });
 
+test("trial lesson records never deduct formal credits by default", () => {
+  const source = legacyData();
+  source.lessons.push({
+    id: "trial_1",
+    studentId: "",
+    subject: "英文試教",
+    lessonType: "trial",
+    trial: { name: "新同學", result: "pending" },
+    date: "2026-08-07",
+    startTime: "19:00",
+    endTime: "20:00",
+    status: "scheduled",
+  });
+  const data = domain.normalizeData(source);
+  let sequence = 0;
+  domain.completeLessonTransaction(data, {
+    lessonId: "trial_1",
+    status: "completed",
+    deductLesson: true,
+    idFactory: prefix => `${prefix}_trial_${++sequence}`,
+  });
+  assert.equal(data.lessonRecords.find(item => item.lessonId === "trial_1").deductLesson, false);
+  assert.equal(domain.creditBalance(data, "student_1"), 6);
+  assert.doesNotThrow(() => domain.normalizeData(data));
+});
+
 test("CSV formula starters are exported as text", () => {
   assert.equal(domain.sanitizeCsvCell("=1+1"), "\"\t=1+1\"");
   assert.equal(domain.sanitizeCsvCell("一般文字"), "\"一般文字\"");
