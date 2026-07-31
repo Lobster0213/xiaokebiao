@@ -1098,6 +1098,14 @@ textarea { min-height: 96px; resize: vertical; }
   let state = loadData();
   let ui = createUIState();
   let deferredInstallPrompt = null;
+  let androidUpdateState = null;
+  let lastPromptedAndroidVersion = "";
+
+  try {
+    if (window.AndroidUpdater?.getState) androidUpdateState = JSON.parse(window.AndroidUpdater.getState());
+  } catch (error) {
+    console.warn("無法讀取 Android 更新狀態", error);
+  }
 
   function createUIState() {
     return {
@@ -1879,6 +1887,51 @@ textarea { min-height: 96px; resize: vertical; }
       ${bottomNav()}`;
   }
 
+  function formatFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return "大小未知";
+    if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(value / 1024))} KB`;
+  }
+
+  function renderAndroidUpdateSettings() {
+    if (!window.AndroidUpdater) return "";
+    const update = androidUpdateState || {
+      currentVersion: APP_VERSION,
+      status: "idle",
+      autoCheck: true,
+      wifiOnly: true,
+    };
+    const statusText = update.message || ({
+      idle: "尚未檢查更新",
+      checking: "正在檢查更新…",
+      current: "目前已是最新版本",
+      available: `有新版本 ${update.latestVersion || ""}`,
+      downloading: `下載中 ${update.downloadProgress || 0}%`,
+      ready: "APK 已下載，可繼續安裝",
+      installing: "等待 Android 系統安裝確認",
+      error: "更新發生錯誤",
+    }[update.status] || "");
+    const action = update.status === "available"
+      ? `<button class="btn btn-primary" data-action="download-update">下載並更新</button><button class="btn btn-soft" data-action="dismiss-update">稍後</button>`
+      : update.status === "ready" || update.hasDownloadedApk
+        ? `<button class="btn btn-primary" data-action="continue-update">繼續安裝</button><button class="btn btn-soft" data-action="download-update">重新下載</button>`
+        : `<button class="btn btn-soft btn-full" data-action="check-update">檢查更新</button>`;
+    return `<section class="section"><div class="section-heading"><h2>Android App 更新</h2></div>
+      <div class="detail-hero">
+        <div class="record-row"><div><strong>目前版本 ${escapeHtml(update.currentVersion || APP_VERSION)}</strong><div class="lesson-meta">${escapeHtml(statusText)}</div></div>${update.latestVersion ? `<span class="status status-scheduled">最新 ${escapeHtml(update.latestVersion)}</span>` : ""}</div>
+        ${update.status === "downloading" ? `<div class="repeat-summary" style="margin-top:10px"><strong>下載進度 ${Number(update.downloadProgress || 0)}%</strong></div>` : ""}
+        ${update.apkName ? `<p class="lesson-meta">${escapeHtml(update.apkName)} · ${formatFileSize(update.apkSize)}</p>` : ""}
+        <div class="detail-actions">${action}</div>
+      </div>
+      <div class="settings-card">
+        <label class="settings-item"><span><strong>啟動時自動檢查</strong><br><small>只讀 GitHub 最新正式 Release</small></span><span class="toggle"><input id="android-auto-check" type="checkbox" ${update.autoCheck !== false ? "checked" : ""}><span class="slider"></span></span></label>
+        <label class="settings-item"><span><strong>僅 Wi-Fi 下載</strong><br><small>關閉後可能使用行動數據</small></span><span class="toggle"><input id="android-wifi-only" type="checkbox" ${update.wifiOnly !== false ? "checked" : ""}><span class="slider"></span></span></label>
+      </div>
+      <p class="export-note">上次檢查：${update.lastCheckedAt ? escapeHtml(new Date(update.lastCheckedAt).toLocaleString("zh-TW")) : "尚未檢查"}。下載不會開啟瀏覽器，完成後仍須在 Android 系統畫面確認安裝。</p>
+    </section>`;
+  }
+
   function renderMore() {
     const profile = state.teacherProfile || defaultTeacherProfile();
     const profileMeta = profile.subjects.length ? profile.subjects.join("、") : "尚未設定授課科目";
@@ -1909,6 +1962,7 @@ textarea { min-height: 96px; resize: vertical; }
         </div>
         <p class="export-note">CSV 僅包含課程明細，不會匯出老師電話、Email 或其他聯絡資料。</p>
       </section>
+      ${renderAndroidUpdateSettings()}
       <input class="file-input" id="import-file" type="file" accept="application/json,.json" />
       <div class="version">小課表 MVP ${APP_VERSION}</div>
       ${bottomNav()}`;
@@ -1940,6 +1994,34 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function closeSheet() { $("#overlay-root").innerHTML = ""; }
+
+  function callAndroidUpdater(method, ...args) {
+    try {
+      if (!window.AndroidUpdater || typeof window.AndroidUpdater[method] !== "function") throw new Error("目前不是 Android App");
+      window.AndroidUpdater[method](...args);
+    } catch (error) {
+      toast(error.message || "Android 更新功能暫時無法使用", "error");
+    }
+  }
+
+  function showAndroidUpdateSheet(update) {
+    openSheet(`小課表 ${update.latestVersion}`, `
+      <div class="form-grid">
+        <div class="detail-hero"><div class="record-row"><div><strong>發現新版本</strong><div class="lesson-meta">${escapeHtml(update.apkName || "正式版 APK")} · ${formatFileSize(update.apkSize)}</div></div><span class="status status-scheduled">${escapeHtml(update.latestVersion || "")}</span></div></div>
+        <div class="field"><label>更新內容</label><div class="repeat-summary" style="white-space:pre-wrap;max-height:180px;overflow:auto">${escapeHtml(update.releaseNotes || "此版本未提供更新說明。")}</div></div>
+        <p class="export-note">APK 會在 App 內背景下載，不會開啟瀏覽器；下載後由 Android 系統顯示安裝確認。</p>
+        <div class="detail-actions"><button class="btn btn-soft" data-action="dismiss-update">稍後</button><button class="btn btn-primary" data-action="download-update">下載並更新</button></div>
+      </div>`);
+  }
+
+  window.onAndroidUpdateState = update => {
+    androidUpdateState = update;
+    if (ui.tab === "more" && !ui.studentDetailId) render();
+    if (update?.status === "available" && update.latestVersion && lastPromptedAndroidVersion !== update.latestVersion) {
+      lastPromptedAndroidVersion = update.latestVersion;
+      showAndroidUpdateSheet(update);
+    }
+  };
 
   async function installApp() {
     if (deferredInstallPrompt) {
@@ -2449,7 +2531,9 @@ textarea { min-height: 96px; resize: vertical; }
 
     openSheet(editing ? "編輯課程" : (copying ? "複製課程" : "新增課程"), `
       <form id="lesson-form" class="form-grid" novalidate>
-        <div class="field"><label>課程類型</label><div class="segmented"><label><input type="radio" name="lessonType" value="formal" ${initialLessonType === "formal" ? "checked" : ""}><span>正式課程</span></label><label><input type="radio" name="lessonType" value="trial" ${initialLessonType === "trial" ? "checked" : ""}><span>試教課程</span></label></div></div>
+        ${editing && lesson.recordId
+          ? `<input type="hidden" name="lessonType" value="${initialLessonType}"><div class="field"><label>課程類型</label><div class="repeat-summary"><strong>${initialLessonType === "trial" ? "試教課程" : "正式課程"}</strong><br>已有上課紀錄後不可直接變更類型。</div></div>`
+          : `<div class="field"><label>課程類型</label><div class="segmented"><label><input type="radio" name="lessonType" value="formal" ${initialLessonType === "formal" ? "checked" : ""}><span>正式課程</span></label><label><input type="radio" name="lessonType" value="trial" ${initialLessonType === "trial" ? "checked" : ""}><span>試教課程</span></label></div></div>`}
         <div id="formal-lesson-fields">
           ${editing ? "" : `<div class="field"><label>最近學生</label><div class="recent-student-row">${recents.map(s => `<button class="recent-student-chip ${s.id === selectedStudentId ? "active" : ""}" type="button" data-recent-student="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(s.subject)}</button>`).join("")}</div></div>`}
           <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId"><option value="">請選擇學生</option>${state.students.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
@@ -3046,6 +3130,10 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "restart-onboarding") showOnboarding(1);
     else if (action === "clear-demo") showOnboarding(4, "clear");
     else if (action === "install-app") installApp();
+    else if (action === "check-update") callAndroidUpdater("checkForUpdates");
+    else if (action === "download-update") { closeSheet(); callAndroidUpdater("downloadAndInstall"); }
+    else if (action === "continue-update") callAndroidUpdater("continueInstall");
+    else if (action === "dismiss-update") closeSheet();
     else if (action === "add-lesson") lessonForm(null, actionEl.dataset.studentId || null);
     else if (action === "add-calendar-lesson") {
       const date = actionEl.dataset.calendarDate || ui.selectedDate;
@@ -3087,6 +3175,18 @@ textarea { min-height: 96px; resize: vertical; }
   });
 
   document.addEventListener("change", e => {
+    if (e.target.id === "android-auto-check") {
+      state.settings.update.autoCheck = e.target.checked;
+      saveData();
+      callAndroidUpdater("setAutoCheck", e.target.checked);
+      return;
+    }
+    if (e.target.id === "android-wifi-only") {
+      state.settings.update.wifiOnly = e.target.checked;
+      saveData();
+      callAndroidUpdater("setWifiOnly", e.target.checked);
+      return;
+    }
     if (e.target.id === "import-file") {
       const file = e.target.files?.[0];
       if (!file) return;

@@ -7,5 +7,12 @@ PASTE_TO_CODEX.txt
 pwa-mobile-*.png
 .tools/
 node_modules/
+android/.gradle/
+android/**/build/
+android/local.properties
+*.keystore
+*.jks
+dist/*.apk
+dist/*.sha256
 .DS_Store
 Thumbs.db

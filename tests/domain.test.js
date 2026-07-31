@@ -50,6 +50,18 @@ test("unsafe imported identifiers are rejected before reaching innerHTML", () =>
   assert.throws(() => domain.normalizeData(payload), /ID 格式不安全/);
 });
 
+test("orphaned imported credit transactions are rejected", () => {
+  const payload = legacyData();
+  payload.lessonCreditTransactions = [{
+    id: "credit_orphan",
+    studentId: "student_1",
+    type: "deduction",
+    amount: -1,
+    relatedLessonId: "lesson_missing",
+  }];
+  assert.throws(() => domain.normalizeData(payload), /參照的課程不存在/);
+});
+
 test("eight weekly lessons cross August into September", () => {
   const plan = domain.planRecurrence({
     startDate: "2026-08-06",

@@ -266,6 +266,7 @@
       const studentId = assertSafeId(transaction.studentId, `堂數異動 ${id} 的學生`);
       if (!studentIds.has(studentId)) throw new Error(`堂數異動 ${id} 找不到學生`);
       const relatedLessonId = transaction.relatedLessonId ? assertSafeId(transaction.relatedLessonId, `堂數異動 ${id} 的課程`) : null;
+      if (relatedLessonId && !lessonIds.has(relatedLessonId)) throw new Error(`堂數異動 ${id} 參照的課程不存在`);
       return {
         ...transaction,
         id,
