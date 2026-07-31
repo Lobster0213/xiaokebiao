@@ -366,6 +366,15 @@ textarea { min-height: 96px; resize: vertical; }
 .credit-alert details { margin-top: 8px; }
 .credit-alert summary { cursor: pointer; font-weight: 800; }
 .credit-alert-item { padding: 9px 0; border-top: 1px solid #fed7aa; }
+.onboarding-progress { display: flex; gap: 6px; margin-bottom: 16px; }
+.onboarding-progress span { height: 5px; flex: 1; border-radius: 999px; background: var(--line); }
+.onboarding-progress span.active { background: var(--blue); }
+.onboarding-copy { text-align: center; padding: 12px 4px; }
+.onboarding-copy .empty-icon { margin: 0 auto 14px; }
+.onboarding-copy h3 { margin: 0 0 9px; font-size: 21px; }
+.onboarding-copy p { color: var(--muted); line-height: 1.65; }
+.onboarding-feature-list { display: grid; gap: 9px; margin: 16px 0; text-align: left; }
+.onboarding-feature-list div { padding: 11px 12px; background: var(--gray-bg); border-radius: 12px; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 .file-input { display: none; }
@@ -1873,6 +1882,9 @@ textarea { min-height: 96px; resize: vertical; }
   function renderMore() {
     const profile = state.teacherProfile || defaultTeacherProfile();
     const profileMeta = profile.subjects.length ? profile.subjects.join("、") : "尚未設定授課科目";
+    const hasDemoData = state.students.some(item => item.isDemoData) || state.lessons.some(item => item.isDemoData);
+    let hasRecoveryData = false;
+    try { hasRecoveryData = Boolean(localStorage.getItem(`${STORAGE_KEY}_recovery`)); } catch (error) { console.warn("無法讀取復原備份狀態", error); }
     return `
       ${topbar()}
       <div class="page-title-row"><h1>更多</h1></div>
@@ -1881,6 +1893,8 @@ textarea { min-height: 96px; resize: vertical; }
         <div class="settings-card">
           <button class="settings-item" data-action="edit-teacher"><span><strong>老師資訊</strong><br><small>姓名、聯絡方式與課程預設值</small></span><span>›</span></button>
           <button class="settings-item" data-action="install-app"><span><strong>安裝到手機</strong><br><small>加入主畫面，像 App 一樣開啟並支援離線</small></span><span>›</span></button>
+          <button class="settings-item" data-action="show-guide"><span><strong>使用教學</strong><br><small>查看固定排課、扣堂與資料安全說明</small></span><span>›</span></button>
+          <button class="settings-item" data-action="restart-onboarding"><span><strong>重新觀看首次介紹</strong><br><small>從歡迎畫面重新開始四步介紹</small></span><span>›</span></button>
         </div>
       </section>
       <section class="section"><div class="section-heading"><h2>資料備份</h2></div>
@@ -1888,6 +1902,8 @@ textarea { min-height: 96px; resize: vertical; }
           <button class="settings-item" data-action="export-json"><span><strong>下載完整備份（JSON）</strong><br><small>包含老師、學生、課程與堂數紀錄</small></span><span>↓</span></button>
           <button class="settings-item" data-action="export-csv"><span><strong>下載課程明細（CSV）</strong><br><small>可用 Excel 或 Google 試算表開啟</small></span><span>↓</span></button>
           <button class="settings-item" data-action="import-data"><span><strong>匯入資料</strong><br><small>選擇先前匯出的 JSON</small></span><span>›</span></button>
+          ${hasRecoveryData ? `<button class="settings-item" data-action="export-recovery"><span><strong>下載原始復原備份</strong><br><small>遷移失敗時保留下來的未修改資料</small></span><span>↓</span></button>` : ""}
+          ${hasDemoData ? `<button class="settings-item" data-action="clear-demo"><span><strong>清除示範資料</strong><br><small>只移除標示為示範的學生、課程與紀錄</small></span><span>›</span></button>` : ""}
           <button class="settings-item" data-action="reset-demo"><span><strong>重新載入示範資料</strong><br><small>會覆蓋目前資料</small></span><span>›</span></button>
           <button class="settings-item" data-action="clear-data"><span style="color:var(--red)"><strong>清除全部資料</strong><br><small>此操作無法復原</small></span><span>›</span></button>
         </div>
@@ -2888,11 +2904,114 @@ textarea { min-height: 96px; resize: vertical; }
     }
   }
 
+  function clearDemoData() {
+    Domain.removeDemoData(state);
+    state.settings.hasCompletedOnboarding = true;
+    state.settings.onboardingVersion = Domain.ONBOARDING_VERSION;
+    saveData();
+    closeSheet();
+    ui = createUIState();
+    ui.tab = "students";
+    render();
+    toast("已只清除示範資料；你自行建立的資料均已保留", "success", {
+      duration: 8000,
+      actions: [{ label: "新增第一位學生", handler: () => studentForm() }],
+    });
+  }
+
+  function completeOnboarding() {
+    state.settings.hasCompletedOnboarding = true;
+    state.settings.onboardingVersion = Domain.ONBOARDING_VERSION;
+    saveData();
+    closeSheet();
+    render();
+    toast("首次介紹已完成");
+  }
+
+  function onboardingProgress(step) {
+    return `<div class="onboarding-progress" aria-label="第 ${step} 步，共 4 步">${[1,2,3,4].map(index => `<span class="${index <= step ? "active" : ""}"></span>`).join("")}</div>`;
+  }
+
+  function showOnboarding(step = 1, choice = "keep") {
+    const title = `首次介紹 ${step}/4`;
+    if (step === 1) {
+      openSheet(title, `${onboardingProgress(1)}<div class="onboarding-copy"><div class="empty-icon">🗓️</div><h3>歡迎使用小課表</h3><p>快速排課、記錄堂數，並在週視圖與月視圖查看完整行程。</p></div><button class="btn btn-primary btn-full" id="onboarding-next">下一步</button>`, root => {
+        $("#onboarding-next", root).addEventListener("click", () => showOnboarding(2));
+      });
+    } else if (step === 2) {
+      openSheet(title, `${onboardingProgress(2)}<div class="onboarding-copy"><h3>三項核心功能</h3><div class="onboarding-feature-list"><div>📆 固定排課：跨月份與年份自動安排</div><div>➖ 自動扣堂：每筆異動都有紀錄</div><div>🔔 最後一堂提醒：只檢查今天有課的學生</div></div></div><button class="btn btn-primary btn-full" id="onboarding-next">下一步</button>`, root => {
+        $("#onboarding-next", root).addEventListener("click", () => showOnboarding(3));
+      });
+    } else if (step === 3) {
+      openSheet(title, `${onboardingProgress(3)}<div class="onboarding-copy"><h3>先用示範資料熟悉操作</h3><p>示範學生、課程與紀錄都有獨立標記。你可以保留體驗，也可以只清除示範資料；不會動到手機其他檔案或你自行建立的資料。</p></div><div class="form-grid"><button class="btn btn-soft btn-full" id="onboarding-keep">先使用示範資料看看</button><button class="btn btn-primary btn-full" id="onboarding-clear">清除示範資料並開始</button></div>`, root => {
+        $("#onboarding-keep", root).addEventListener("click", () => showOnboarding(4, "keep"));
+        $("#onboarding-clear", root).addEventListener("click", () => showOnboarding(4, "clear"));
+      });
+    } else {
+      const clearing = choice === "clear";
+      openSheet(title, `${onboardingProgress(4)}<div class="onboarding-copy"><h3>${clearing ? "確認只清除示範資料" : "準備完成"}</h3><p>${clearing ? "只會刪除 isDemoData: true 的示範學生、課程與紀錄；自行建立的資料會保留。" : "示範資料會繼續保留，之後可到「更多 → 清除示範資料」安全移除。"}</p></div><button class="btn ${clearing ? "btn-danger" : "btn-primary"} btn-full" id="onboarding-finish">${clearing ? "確認清除並開始" : "保留示範資料並開始"}</button>`, root => {
+        $("#onboarding-finish", root).addEventListener("click", () => clearing ? clearDemoData() : completeOnboarding());
+      });
+    }
+  }
+
+  function exportRecoveryBackup() {
+    try {
+      const raw = localStorage.getItem(`${STORAGE_KEY}_recovery`);
+      if (!raw) throw new Error("目前沒有原始復原備份");
+      downloadBlobFile([raw], "application/json;charset=utf-8", `小課表原始復原備份_${exportTimestamp()}.json`);
+      toast("原始復原備份已下載");
+    } catch (error) {
+      toast(error.message || "無法下載復原備份", "error");
+    }
+  }
+
   function clearAllData() {
-    if (!confirm("確定要清除全部資料嗎？此操作無法復原。")) return;
-    if (!confirm("最後確認：學生、課程與紀錄都會被刪除。")) return;
-    state = { teacherProfile: defaultTeacherProfile(), students: [], lessons: [], lessonRecords: [], version: APP_VERSION };
-    saveData(); ui = createUIState(); render(); toast("資料已清除");
+    openSheet("清除全部資料", `
+      <form id="clear-all-form" class="form-grid">
+        <div class="warning"><strong>建議先下載完整 JSON 備份。</strong><br>這會清除小課表內的老師資訊、學生、課程、堂數異動與設定，但不會刪除手機其他檔案。</div>
+        <button class="btn btn-soft btn-full" type="button" data-action="export-json">先下載完整 JSON 備份</button>
+        <div class="field"><label for="clear-confirmation">請輸入「確認清除」</label><input id="clear-confirmation" autocomplete="off" placeholder="確認清除"></div>
+        <div class="sheet-footer"><button id="clear-all-submit" class="btn btn-danger btn-full" type="submit" disabled>永久清除小課表資料</button></div>
+      </form>`, root => {
+        const form = $("#clear-all-form", root);
+        const input = $("#clear-confirmation", root);
+        const button = $("#clear-all-submit", root);
+        input.addEventListener("input", () => { button.disabled = input.value !== "確認清除"; });
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (input.value !== "確認清除" || button.disabled) return;
+          button.disabled = true;
+          invalidStoredData = null;
+          try {
+            const keysToRemove = [];
+            for (let index = 0; index < localStorage.length; index += 1) {
+              const key = localStorage.key(index);
+              if (key === `${STORAGE_KEY}_recovery` || key?.startsWith(`${STORAGE_KEY}_migration_backup_`)) keysToRemove.push(key);
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            localStorage.removeItem(CALENDAR_VIEW_KEY);
+            state = Domain.normalizeData({
+              teacherProfile: defaultTeacherProfile(),
+              students: [],
+              lessons: [],
+              lessonRecords: [],
+              lessonCreditTransactions: [],
+              settings: { ...Domain.defaultSettings(true), hasCompletedOnboarding: true, onboardingVersion: Domain.ONBOARDING_VERSION },
+              dataVersion: DATA_VERSION,
+              version: APP_VERSION,
+            }, { existingUser: true });
+            saveData();
+            closeSheet();
+            ui = createUIState();
+            render();
+            toast("小課表內的資料已全部清除");
+          } catch (error) {
+            button.disabled = false;
+            toast(error.message || "清除資料失敗", "error");
+          }
+        });
+      });
   }
 
   function resetDemo() {
@@ -2923,6 +3042,9 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "edit-student") studentForm(studentById(id));
     else if (action === "add-credit") creditSheet(studentById(id));
     else if (action === "edit-teacher") teacherProfileForm();
+    else if (action === "show-guide") showOnboarding(2);
+    else if (action === "restart-onboarding") showOnboarding(1);
+    else if (action === "clear-demo") showOnboarding(4, "clear");
     else if (action === "install-app") installApp();
     else if (action === "add-lesson") lessonForm(null, actionEl.dataset.studentId || null);
     else if (action === "add-calendar-lesson") {
@@ -2948,6 +3070,7 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "close-sheet") closeSheet();
     else if (action === "export-json" || action === "export-data") exportJsonBackup();
     else if (action === "export-csv") exportLessonCsv();
+    else if (action === "export-recovery") exportRecoveryBackup();
     else if (action === "import-data") $("#import-file")?.click();
     else if (action === "clear-data") clearAllData();
     else if (action === "reset-demo") resetDemo();
@@ -3012,6 +3135,9 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   render();
+  if (!state.settings?.hasCompletedOnboarding || Number(state.settings?.onboardingVersion || 0) < Domain.ONBOARDING_VERSION) {
+    setTimeout(() => showOnboarding(1), 120);
+  }
 })();
 
 </script>

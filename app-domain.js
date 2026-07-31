@@ -557,6 +557,31 @@
     return { lesson, record };
   }
 
+  function removeDemoData(data) {
+    const demoStudentIds = new Set((data.students || []).filter(student => student.isDemoData).map(student => student.id));
+    const protectedStudentIds = new Set([
+      ...(data.lessons || []).filter(lesson => !lesson.isDemoData && demoStudentIds.has(lesson.studentId)).map(lesson => lesson.studentId),
+      ...(data.lessonCreditTransactions || []).filter(transaction => !transaction.isDemoData && demoStudentIds.has(transaction.studentId)).map(transaction => transaction.studentId),
+    ]);
+    const removedStudentIds = new Set([...demoStudentIds].filter(id => !protectedStudentIds.has(id)));
+    const removedLessonIds = new Set((data.lessons || []).filter(lesson => lesson.isDemoData).map(lesson => lesson.id));
+    data.students = (data.students || [])
+      .filter(student => !removedStudentIds.has(student.id))
+      .map(student => protectedStudentIds.has(student.id) ? { ...student, isDemoData: false } : student);
+    data.lessons = (data.lessons || []).filter(lesson => !removedLessonIds.has(lesson.id));
+    data.lessonRecords = (data.lessonRecords || []).filter(record =>
+      !record.isDemoData
+      && !removedLessonIds.has(record.lessonId)
+      && !removedStudentIds.has(record.studentId)
+    );
+    data.lessonCreditTransactions = (data.lessonCreditTransactions || []).filter(transaction =>
+      !transaction.isDemoData
+      && !removedStudentIds.has(transaction.studentId)
+      && !removedLessonIds.has(transaction.relatedLessonId)
+    );
+    return { removedStudents: removedStudentIds.size, removedLessons: removedLessonIds.size };
+  }
+
   function sanitizeCsvCell(value) {
     let output = value == null ? "" : String(value);
     if (/^[=+\-@\t\r\n＝＋－＠]/.test(output)) output = `\t${output}`;
@@ -581,6 +606,7 @@
     isRealISODate,
     normalizeData,
     planRecurrence,
+    removeDemoData,
     reverseCreditTransaction,
     restoreLessonTransaction,
     sanitizeCsvCell,

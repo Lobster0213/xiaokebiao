@@ -194,6 +194,32 @@ test("trial lesson records never deduct formal credits by default", () => {
   assert.doesNotThrow(() => domain.normalizeData(data));
 });
 
+test("clearing demo data preserves independently created data", () => {
+  const source = legacyData();
+  source.students[0].isDemoData = true;
+  source.lessons[0].isDemoData = true;
+  source.students.push({
+    id: "student_user",
+    name: "自建學生",
+    subject: "英文",
+    billingType: "perLesson",
+  });
+  source.lessons.push({
+    id: "lesson_user",
+    studentId: "student_user",
+    subject: "英文",
+    date: "2026-08-09",
+    startTime: "10:00",
+    endTime: "11:00",
+    status: "scheduled",
+    isDemoData: false,
+  });
+  const data = domain.normalizeData(source);
+  domain.removeDemoData(data);
+  assert.deepEqual(data.students.map(item => item.id), ["student_user"]);
+  assert.deepEqual(data.lessons.map(item => item.id), ["lesson_user"]);
+});
+
 test("CSV formula starters are exported as text", () => {
   assert.equal(domain.sanitizeCsvCell("=1+1"), "\"\t=1+1\"");
   assert.equal(domain.sanitizeCsvCell("一般文字"), "\"一般文字\"");
