@@ -1,0 +1,95 @@
+name: Build Android Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required Android configuration
+        env:
+          ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_APPLICATION_ID" || (echo "Missing repository variable ANDROID_APPLICATION_ID" && exit 1)
+          test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing ANDROID_KEYSTORE_BASE64" && exit 1)
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || (echo "Missing ANDROID_KEYSTORE_PASSWORD" && exit 1)
+          test -n "$ANDROID_KEY_ALIAS" || (echo "Missing ANDROID_KEY_ALIAS" && exit 1)
+          test -n "$ANDROID_KEY_PASSWORD" || (echo "Missing ANDROID_KEY_PASSWORD" && exit 1)
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Prepare release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/xiaokebiao-release.keystore"
+          chmod 600 "$RUNNER_TEMP/xiaokebiao-release.keystore"
+
+      - name: Build signed release APK
+        env:
+          ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/xiaokebiao-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then VERSION_NAME="0.7.0"; fi
+          VERSION_CODE="$(sed -n 's/^XIAOKEBIAO_VERSION_CODE=//p' android/gradle.properties | tail -n 1)"
+          case "$VERSION_CODE" in
+            ''|*[!0-9]*) echo "Invalid XIAOKEBIAO_VERSION_CODE in android/gradle.properties" >&2; exit 1 ;;
+          esac
+          gradle -p android :app:assembleRelease \
+            -PXIAOKEBIAO_APPLICATION_ID="$ANDROID_APPLICATION_ID" \
+            -PXIAOKEBIAO_VERSION_NAME="$VERSION_NAME" \
+            -PXIAOKEBIAO_VERSION_CODE="$VERSION_CODE"
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/xiaokebiao-v${VERSION_NAME}-release.apk"
+          sha256sum "dist/xiaokebiao-v${VERSION_NAME}-release.apk" > "dist/xiaokebiao-v${VERSION_NAME}-release.apk.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaokebiao-release-apk
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Publish or update GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          elif [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --prerelease
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --latest
+          fi

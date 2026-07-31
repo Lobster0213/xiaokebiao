@@ -354,8 +354,27 @@ textarea { min-height: 96px; resize: vertical; }
 .sheet-footer { position: sticky; bottom: -24px; background: white; padding-top: 14px; margin-top: 8px; }
 
 .toast-root { position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 200; width: min(calc(100% - 32px), 440px); pointer-events: none; }
-.toast { background: #172033; color: white; border-radius: 14px; padding: 12px 14px; box-shadow: 0 14px 34px rgba(15, 23, 42, .25); animation: toastIn .2s ease; }
+.toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #172033; color: white; border-radius: 14px; padding: 12px 14px; box-shadow: 0 14px 34px rgba(15, 23, 42, .25); animation: toastIn .2s ease; pointer-events: auto; }
 .toast.error { background: var(--red); }
+.toast-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.toast-action { border: 0; border-radius: 9px; background: rgba(255,255,255,.16); color: white; padding: 7px 9px; font-weight: 800; white-space: nowrap; }
+.credit-alert { margin: 0 0 12px; padding: 12px 14px; border: 1px solid #fed7aa; border-radius: 15px; background: #fff7ed; color: #9a3412; }
+.credit-alert strong { display: block; font-size: 14px; }
+.credit-alert p { margin: 4px 0 0; font-size: 13px; }
+.credit-alert-actions { display: flex; gap: 8px; margin-top: 10px; }
+.credit-alert-actions .btn { padding: 8px 11px; min-height: 36px; }
+.credit-alert details { margin-top: 8px; }
+.credit-alert summary { cursor: pointer; font-weight: 800; }
+.credit-alert-item { padding: 9px 0; border-top: 1px solid #fed7aa; }
+.onboarding-progress { display: flex; gap: 6px; margin-bottom: 16px; }
+.onboarding-progress span { height: 5px; flex: 1; border-radius: 999px; background: var(--line); }
+.onboarding-progress span.active { background: var(--blue); }
+.onboarding-copy { text-align: center; padding: 12px 4px; }
+.onboarding-copy .empty-icon { margin: 0 auto 14px; }
+.onboarding-copy h3 { margin: 0 0 9px; font-size: 21px; }
+.onboarding-copy p { color: var(--muted); line-height: 1.65; }
+.onboarding-feature-list { display: grid; gap: 9px; margin: 16px 0; text-align: left; }
+.onboarding-feature-list div { padding: 11px 12px; background: var(--gray-bg); border-radius: 12px; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 .file-input { display: none; }
@@ -1022,13 +1041,17 @@ textarea { min-height: 96px; resize: vertical; }
   <div id="app" class="app-shell" aria-live="polite"></div>
   <div id="overlay-root"></div>
   <div id="toast-root" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
+  <script src="./app-domain.js"></script>
   <script>
 (() => {
   "use strict";
 
+  const Domain = window.XiaoKeBiaoDomain;
+  if (!Domain) throw new Error("小課表資料模組載入失敗");
   const STORAGE_KEY = "xiaokebiao_mvp_v1";
   const CALENDAR_VIEW_KEY = "xiaokebiao_calendar_view_v1";
-  const APP_VERSION = "0.6.0";
+  const APP_VERSION = "0.7.0";
+  const DATA_VERSION = Domain.DATA_VERSION;
   const WEEK_START_HOUR = 8;
   const WEEK_END_HOUR = 23;
   const WEEK_HOUR_HEIGHT = 64;
@@ -1055,10 +1078,34 @@ textarea { min-height: 96px; resize: vertical; }
     rescheduled: false,
   };
 
+  const CREDIT_TYPE_LABELS = {
+    purchase: "購買",
+    gift: "贈送",
+    manualAdjustment: "人工修正",
+    deduction: "扣堂",
+    restoration: "還原",
+    refund: "退款",
+  };
+
+  const TRIAL_RESULT_LABELS = {
+    pending: "待確認",
+    converted: "已轉正式",
+    notContinuing: "未續課",
+    followUp: "待追蹤",
+  };
+
   let invalidStoredData = null;
   let state = loadData();
   let ui = createUIState();
   let deferredInstallPrompt = null;
+  let androidUpdateState = null;
+  let lastPromptedAndroidVersion = "";
+
+  try {
+    if (window.AndroidUpdater?.getState) androidUpdateState = JSON.parse(window.AndroidUpdater.getState());
+  } catch (error) {
+    console.warn("無法讀取 Android 更新狀態", error);
+  }
 
   function createUIState() {
     return {
@@ -1177,83 +1224,56 @@ textarea { min-height: 96px; resize: vertical; }
     const now = new Date().toISOString();
     const today = todayISO();
     const students = [
-      { id: "stu_wang", name: "王小明", subject: "數學", phone: "0912-345-678", contactNote: "以 LINE 聯絡家長", billingType: "package", totalLessons: 10, usedLessons: 4, pricePerLesson: 800, defaultDuration: 60, notes: "國二，複習進度需放慢", createdAt: now, updatedAt: now },
-      { id: "stu_chen", name: "陳小安", subject: "英文", phone: "", contactNote: "週末前確認教材", billingType: "package", totalLessons: 20, usedLessons: 18, pricePerLesson: 700, defaultDuration: 60, notes: "準備英檢初級", createdAt: now, updatedAt: now },
-      { id: "stu_li", name: "李雨晴", subject: "鋼琴", phone: "0988-222-123", contactNote: "可傳訊息給本人", billingType: "perLesson", totalLessons: null, usedLessons: 0, pricePerLesson: 1000, defaultDuration: 60, notes: "成人初學", createdAt: now, updatedAt: now },
-      { id: "stu_zhang", name: "張子維", subject: "國文", phone: "", contactNote: "", billingType: "package", totalLessons: 8, usedLessons: 2, pricePerLesson: 750, defaultDuration: 60, notes: "作文為主", createdAt: now, updatedAt: now },
+      { id: "stu_wang", name: "王小明", subject: "數學", phone: "0912-345-678", contactNote: "以 LINE 聯絡家長", billingType: "package", totalLessons: 10, usedLessons: 4, pricePerLesson: 800, defaultDuration: 60, notes: "國二，複習進度需放慢", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "stu_chen", name: "陳小安", subject: "英文", phone: "", contactNote: "週末前確認教材", billingType: "package", totalLessons: 20, usedLessons: 18, pricePerLesson: 700, defaultDuration: 60, notes: "準備英檢初級", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "stu_li", name: "李雨晴", subject: "鋼琴", phone: "0988-222-123", contactNote: "可傳訊息給本人", billingType: "perLesson", totalLessons: null, usedLessons: 0, pricePerLesson: 1000, defaultDuration: 60, notes: "成人初學", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "stu_zhang", name: "張子維", subject: "國文", phone: "", contactNote: "", billingType: "package", totalLessons: 8, usedLessons: 2, pricePerLesson: 750, defaultDuration: 60, notes: "作文為主", isDemoData: true, createdAt: now, updatedAt: now },
     ];
 
     const completedLessonId = "lesson_demo_completed";
     const recordId = "record_demo_completed";
     const lessons = [
-      { id: "lesson_demo_1", studentId: "stu_wang", subject: "數學", date: today, startTime: "09:30", endTime: "10:30", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "二次函數", createdAt: now, updatedAt: now },
-      { id: "lesson_demo_2", studentId: "stu_chen", subject: "英文", date: today, startTime: "13:00", endTime: "14:00", mode: "online", location: "Google Meet", recurrenceGroupId: null, status: "inProgress", startedAt: now, recordId: null, notes: "閱讀理解", createdAt: now, updatedAt: now },
-      { id: completedLessonId, studentId: "stu_li", subject: "鋼琴", date: today, startTime: "16:30", endTime: "17:30", mode: "inPerson", location: "琴房", recurrenceGroupId: null, status: "completed", startedAt: now, recordId, notes: "音階與節奏", createdAt: now, updatedAt: now },
-      { id: "lesson_demo_4", studentId: "stu_zhang", subject: "國文", date: addDays(today, 1), startTime: "10:00", endTime: "11:00", mode: "online", location: "Zoom", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "作文架構", createdAt: now, updatedAt: now },
-      { id: "lesson_demo_5", studentId: "stu_wang", subject: "數學", date: addDays(today, 3), startTime: "14:00", endTime: "15:00", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "", createdAt: now, updatedAt: now },
+      { id: "lesson_demo_1", studentId: "stu_wang", subject: "數學", date: today, startTime: "09:30", endTime: "10:30", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "二次函數", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "lesson_demo_2", studentId: "stu_chen", subject: "英文", date: today, startTime: "13:00", endTime: "14:00", mode: "online", location: "Google Meet", recurrenceGroupId: null, status: "inProgress", startedAt: now, recordId: null, notes: "閱讀理解", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: completedLessonId, studentId: "stu_li", subject: "鋼琴", date: today, startTime: "16:30", endTime: "17:30", mode: "inPerson", location: "琴房", recurrenceGroupId: null, status: "completed", startedAt: now, recordId, notes: "音階與節奏", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "lesson_demo_4", studentId: "stu_zhang", subject: "國文", date: addDays(today, 1), startTime: "10:00", endTime: "11:00", mode: "online", location: "Zoom", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "作文架構", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "lesson_demo_5", studentId: "stu_wang", subject: "數學", date: addDays(today, 3), startTime: "14:00", endTime: "15:00", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "", isDemoData: true, createdAt: now, updatedAt: now },
     ];
 
     const lessonRecords = [
-      { id: recordId, lessonId: completedLessonId, studentId: "stu_li", status: "completed", deductLesson: false, note: "今天節奏感進步，回家練 C 大調。", recordedAt: now, updatedAt: now },
+      { id: recordId, lessonId: completedLessonId, studentId: "stu_li", status: "completed", deductLesson: false, note: "今天節奏感進步，回家練 C 大調。", isDemoData: true, recordedAt: now, updatedAt: now },
     ];
 
-    return { teacherProfile: defaultTeacherProfile(), students, lessons, lessonRecords, version: APP_VERSION };
+    return Domain.normalizeData({
+      teacherProfile: defaultTeacherProfile(),
+      students,
+      lessons,
+      lessonRecords,
+      lessonCreditTransactions: [],
+      settings: { ...Domain.defaultSettings(false), hasCompletedOnboarding: false, onboardingVersion: 0 },
+      dataVersion: DATA_VERSION,
+      version: APP_VERSION,
+    }, { existingUser: false, now });
   }
 
   function validateImportedData(data) {
-    if (!data || typeof data !== "object") return false;
-    if (!Array.isArray(data.students) || !Array.isArray(data.lessons) || !Array.isArray(data.lessonRecords)) return false;
-    const studentOk = data.students.every(s => s && typeof s.id === "string" && typeof s.name === "string" && typeof s.subject === "string" && ["package", "perLesson"].includes(s.billingType));
-    const lessonOk = data.lessons.every(l => l && typeof l.id === "string" && typeof l.studentId === "string" && typeof l.date === "string" && typeof l.startTime === "string" && typeof l.endTime === "string" && STATUS_LABELS[l.status]);
-    const recordOk = data.lessonRecords.every(r => r && typeof r.id === "string" && typeof r.lessonId === "string" && typeof r.studentId === "string" && typeof r.deductLesson === "boolean");
-    const teacherOk = data.teacherProfile && typeof data.teacherProfile.name === "string" && Array.isArray(data.teacherProfile.subjects);
-    return studentOk && lessonOk && recordOk && teacherOk;
+    return Boolean(
+      data
+      && data.dataVersion === DATA_VERSION
+      && data.teacherProfile
+      && data.settings
+      && Array.isArray(data.students)
+      && Array.isArray(data.lessons)
+      && Array.isArray(data.lessonRecords)
+      && Array.isArray(data.lessonCreditTransactions)
+    );
   }
 
-  function normalizeStoredData(data) {
-    if (!data || typeof data !== "object" || !Array.isArray(data.students) || !Array.isArray(data.lessons)) return null;
-    const students = data.students.map(student => {
-      if (!student || typeof student !== "object") return student;
-      const billingType = student.billingType === "perLesson" ? "perLesson" : "package";
-      const usedLessons = Number.isFinite(Number(student.usedLessons)) ? Math.max(0, Number(student.usedLessons)) : 0;
-      const defaultDuration = Number.isFinite(Number(student.defaultDuration)) ? Number(student.defaultDuration) : 60;
-      return {
-        ...student,
-        name: String(student.name || ""),
-        subject: String(student.subject || ""),
-        billingType,
-        totalLessons: billingType === "perLesson" ? null : (student.totalLessons ?? null),
-        usedLessons,
-        defaultDuration,
-      };
+  function normalizeStoredData(data, options = {}) {
+    return Domain.normalizeData(data, {
+      existingUser: options.existingUser !== false,
+      now: options.now || new Date().toISOString(),
     });
-    const studentMap = new Map(students.filter(Boolean).map(student => [student.id, student]));
-    const lessons = data.lessons.map(lesson => {
-      if (!lesson || typeof lesson !== "object") return lesson;
-      const student = studentMap.get(lesson.studentId);
-      return {
-        ...lesson,
-        subject: String(lesson.subject || student?.subject || ""),
-        status: STATUS_LABELS[lesson.status] ? lesson.status : "scheduled",
-        recurrenceGroupId: lesson.recurrenceGroupId || null,
-        startedAt: lesson.startedAt || null,
-        recordId: lesson.recordId || null,
-        notes: String(lesson.notes || ""),
-        location: String(lesson.location || ""),
-        mode: lesson.mode === "online" ? "online" : "inPerson",
-      };
-    });
-    const lessonRecords = (Array.isArray(data.lessonRecords) ? data.lessonRecords : []).map(record => {
-      if (!record || typeof record !== "object") return record;
-      const status = STATUS_LABELS[record.status] ? record.status : "completed";
-      return {
-        ...record,
-        status,
-        deductLesson: typeof record.deductLesson === "boolean" ? record.deductLesson : Boolean(DEFAULT_DEDUCT[status]),
-        note: String(record.note || ""),
-      };
-    });
-    return { ...data, teacherProfile: normalizeTeacherProfile(data.teacherProfile), students, lessons, lessonRecords, version: APP_VERSION };
   }
 
   function loadData() {
@@ -1266,13 +1286,18 @@ textarea { min-height: 96px; resize: vertical; }
         return demo;
       }
       const parsed = JSON.parse(raw);
-      const normalized = normalizeStoredData(parsed);
-      if (validateImportedData(normalized)) return normalized;
-      invalidStoredData = raw;
-      console.warn("本機資料格式不完整，已保留原始內容並使用安全示範資料");
+      const sourceVersion = Number(parsed.dataVersion || 0);
+      const normalized = normalizeStoredData(parsed, { existingUser: true });
+      if (!validateImportedData(normalized)) throw new Error("資料遷移後格式不正確");
+      if (sourceVersion < DATA_VERSION) {
+        const snapshotKey = `${STORAGE_KEY}_migration_backup_v${sourceVersion}`;
+        if (!localStorage.getItem(snapshotKey)) localStorage.setItem(snapshotKey, raw);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+      }
+      return normalized;
     } catch (err) {
       invalidStoredData = raw;
-      console.warn("讀取本機資料失敗", err);
+      console.warn("讀取或遷移本機資料失敗；原始內容未被覆寫", err);
     }
     return createDemoData();
   }
@@ -1281,25 +1306,27 @@ textarea { min-height: 96px; resize: vertical; }
     if (invalidStoredData !== null && !localStorage.getItem(`${STORAGE_KEY}_recovery`)) {
       localStorage.setItem(`${STORAGE_KEY}_recovery`, invalidStoredData);
     }
+    state = normalizeStoredData({ ...state, dataVersion: DATA_VERSION, version: APP_VERSION }, { existingUser: true });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     invalidStoredData = null;
   }
 
   function calculateRemainingLessons(student) {
-    if (!student || student.billingType === "perLesson" || student.totalLessons == null) return null;
-    return Math.max(0, student.totalLessons - student.usedLessons);
+    if (!student || student.billingType === "perLesson") return null;
+    if (Array.isArray(state.lessonCreditTransactions)) return Domain.creditBalance(state, student.id);
+    if (student.totalLessons == null) return null;
+    return Math.max(0, Number(student.totalLessons || 0) - Number(student.usedLessons || 0));
   }
 
   function timeToMinutes(time) {
-    const [h, m] = time.split(":").map(Number);
-    return h * 60 + m;
+    return Domain.timeToMinutes(time);
   }
 
   function hasScheduleConflict(candidate, ignoreLessonId = null) {
     const start = timeToMinutes(candidate.startTime);
     const end = timeToMinutes(candidate.endTime);
     return state.lessons.some(l => {
-      if (l.id === ignoreLessonId || l.date !== candidate.date || l.status === "cancelled" || l.status === "rescheduled") return false;
+      if (l.deletedAt || l.id === ignoreLessonId || l.date !== candidate.date || l.status === "cancelled" || l.status === "rescheduled") return false;
       const otherStart = timeToMinutes(l.startTime);
       const otherEnd = timeToMinutes(l.endTime);
       return start < otherEnd && end > otherStart;
@@ -1333,50 +1360,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function generateRecurringLessonPlan(input, existingLessons, options = {}) {
-    const targetCount = Math.max(0, Number(input.targetCount) || 0);
-    const weekdays = [...new Set((input.weekdays || []).map(Number).filter(day => day >= 1 && day <= 7))];
-    const autoSupplement = options.autoSupplement !== false;
-    const maxWeeks = Math.max(1, Number(options.maxWeeks) || 104);
-    const originalDates = [];
-    const accepted = [];
-    const supplemented = [];
-    const skipped = [];
-    if (!input.startDate || !weekdays.length || !targetCount) {
-      return { targetCount, originalDates, accepted, supplemented, skipped, limitReached: false, lastDate: null };
-    }
-    const horizon = addDays(input.startDate, maxWeeks * 7);
-    let cursor = input.startDate;
-    let guard = 0;
-    while (cursor <= horizon && guard <= maxWeeks * 7) {
-      if (weekdays.includes(weekdayNumber(cursor))) {
-        const candidate = { ...input.baseLesson, date: cursor };
-        const isOriginal = originalDates.length < targetCount;
-        if (isOriginal) originalDates.push(candidate);
-        const conflicts = findLessonConflicts([candidate], existingLessons);
-        if (!conflicts.length) {
-          if (isOriginal || (autoSupplement && accepted.length < targetCount)) {
-            accepted.push(candidate);
-            if (!isOriginal) supplemented.push(candidate);
-          }
-        } else if (isOriginal || (autoSupplement && accepted.length < targetCount)) {
-          skipped.push({ candidate, conflicts, isOriginal });
-        }
-        if (!autoSupplement && originalDates.length >= targetCount) break;
-        if (autoSupplement && originalDates.length >= targetCount && accepted.length >= targetCount) break;
-      }
-      cursor = addDays(cursor, 1);
-      guard += 1;
-    }
-    const finalAccepted = autoSupplement ? accepted.slice(0, targetCount) : accepted;
-    return {
-      targetCount,
-      originalDates,
-      accepted: finalAccepted,
-      supplemented: supplemented.filter(candidate => finalAccepted.includes(candidate)),
-      skipped,
-      limitReached: autoSupplement && finalAccepted.length < targetCount,
-      lastDate: finalAccepted.length ? finalAccepted[finalAccepted.length - 1].date : null,
-    };
+    return Domain.planRecurrence(input, existingLessons, options);
   }
 
   function materializeRecurringLessons(baseLesson, candidates) {
@@ -1395,11 +1379,25 @@ textarea { min-height: 96px; resize: vertical; }
     }));
   }
 
+  function undoRecurrenceGroup(groupId) {
+    const targetIds = new Set(state.lessons.filter(lesson => lesson.recurrenceGroupId === groupId).map(lesson => lesson.id));
+    if (!targetIds.size) {
+      toast("這批排課已不存在", "error");
+      return;
+    }
+    state.lessons = state.lessons.filter(lesson => !targetIds.has(lesson.id));
+    state.lessonRecords = state.lessonRecords.filter(record => !targetIds.has(record.lessonId));
+    state.lessonCreditTransactions = state.lessonCreditTransactions.filter(transaction => !targetIds.has(transaction.relatedLessonId));
+    saveData();
+    render();
+    toast(`已復原本次排課，共移除 ${targetIds.size} 堂`);
+  }
+
   function formatConflictMessage(skippedItem) {
     const dateText = formatDate(skippedItem.candidate.date);
     const candidateTime = `${skippedItem.candidate.startTime}–${skippedItem.candidate.endTime}`;
     const detail = skippedItem.conflicts.map(({ existing }) => {
-      const student = studentById(existing.studentId) || { name: "已刪除學生" };
+      const student = lessonDisplayPerson(existing);
       return `與「${student.name}｜${existing.subject}｜${existing.startTime}–${existing.endTime}」衝突`;
     }).join("；");
     return { dateText, candidateTime, detail };
@@ -1423,13 +1421,18 @@ textarea { min-height: 96px; resize: vertical; }
 
   function latestLessonForStudent(studentId, ignoreLessonId = null) {
     return [...state.lessons]
-      .filter(item => item.studentId === studentId && item.id !== ignoreLessonId)
+      .filter(item => !item.deletedAt && item.studentId === studentId && item.id !== ignoreLessonId)
       .sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`))[0] || null;
   }
 
   function studentById(id) { return state.students.find(s => s.id === id); }
   function lessonById(id) { return state.lessons.find(l => l.id === id); }
-  function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id); }
+  function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id && !r.deletedAt); }
+  function activeLessons() { return state.lessons.filter(lesson => !lesson.deletedAt); }
+  function lessonDisplayPerson(lesson) {
+    if (lesson.lessonType === "trial") return { name: `${lesson.trial?.name || "未命名"}（試教）`, isTrial: true };
+    return studentById(lesson.studentId) || { name: "已刪除學生", isTrial: false };
+  }
 
   function escapeHtml(value = "") {
     return String(value).replace(/[&<>'"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[ch]));
@@ -1440,11 +1443,18 @@ textarea { min-height: 96px; resize: vertical; }
     return `NT$${Number(value).toLocaleString("zh-TW")}`;
   }
 
-  function toast(message, type = "success") {
+  function toast(message, type = "success", options = {}) {
     const root = $("#toast-root");
-    root.innerHTML = `<div class="toast ${type === "error" ? "error" : ""}">${escapeHtml(message)}</div>`;
+    const actions = Array.isArray(options.actions) ? options.actions : [];
+    root.innerHTML = `<div class="toast ${type === "error" ? "error" : ""}"><span>${escapeHtml(message)}</span>${actions.length ? `<span class="toast-actions">${actions.map((action, index) => `<button class="toast-action" type="button" data-toast-index="${index}">${escapeHtml(action.label)}</button>`).join("")}</span>` : ""}</div>`;
+    $$("[data-toast-index]", root).forEach(button => button.addEventListener("click", () => {
+      const action = actions[Number(button.dataset.toastIndex)];
+      root.innerHTML = "";
+      clearTimeout(toast.timer);
+      action?.handler?.();
+    }));
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => { root.innerHTML = ""; }, 2600);
+    toast.timer = setTimeout(() => { root.innerHTML = ""; }, Number(options.duration) || (actions.length ? 8000 : 2600));
   }
 
   function statusBadge(status) {
@@ -1492,7 +1502,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function lessonCard(lesson, options = {}) {
-    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const student = lessonDisplayPerson(lesson);
     const place = lesson.location ? lesson.location : (lesson.mode === "online" ? "線上" : "未填地點");
     const meta = `${lesson.subject} · ${lesson.mode === "online" ? "線上" : "實體"} · ${place}`;
     return `
@@ -1516,9 +1526,9 @@ textarea { min-height: 96px; resize: vertical; }
 
   function renderHome() {
     const today = todayISO();
-    const lessons = state.lessons.filter(l => l.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const lessons = activeLessons().filter(l => l.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
     const month = today.slice(0, 7);
-    const monthCompleted = state.lessons.filter(l => l.date.startsWith(month) && l.status === "completed").length;
+    const monthCompleted = activeLessons().filter(l => l.date.startsWith(month) && l.status === "completed").length;
     return `
       ${topbar()}
       <section class="hero"><h1>${greeting()}，${escapeHtml(state.teacherProfile?.name || "林老師")} 👋</h1><p>${formatDate(today)}</p></section>
@@ -1527,12 +1537,57 @@ textarea { min-height: 96px; resize: vertical; }
         <span class="summary-divider" aria-hidden="true"></span>
         <div>本月完成 <strong>${monthCompleted}</strong> 堂</div>
       </section>
+      ${renderTodayCreditReminder(lessons)}
       <section class="section">
         <div class="section-heading"><h2>今日課程</h2><span class="subtle">依時間排序</span></div>
         <div class="card-list">${lessons.length ? lessons.map(l => lessonCard(l)).join("") : emptyState("今天沒有安排課程", "先讓自己休息一下吧。", "新增課程", "add-lesson")}</div>
       </section>
       <div class="fab-row"><button class="btn btn-primary btn-full" data-action="add-lesson">＋ 新增課程</button></div>
       ${bottomNav()}`;
+  }
+
+  function todayCreditReminders(todayLessons) {
+    const reminders = [];
+    const studentIds = [...new Set(todayLessons.filter(lesson => lesson.lessonType !== "trial").map(lesson => lesson.studentId))];
+    for (const studentId of studentIds) {
+      const student = studentById(studentId);
+      if (!student || student.billingType !== "package") continue;
+      const studentLessons = todayLessons.filter(lesson => lesson.studentId === studentId);
+      const completedDeduction = studentLessons.find(lesson => recordByLessonId(lesson.id)?.deductLesson);
+      const balance = calculateRemainingLessons(student);
+      if (completedDeduction && balance === 0) {
+        reminders.push({ student, lesson: completedDeduction, state: "usedUp" });
+        continue;
+      }
+      const upcoming = studentLessons.filter(lesson =>
+        ["scheduled", "inProgress"].includes(lesson.status)
+        && !recordByLessonId(lesson.id)?.deductLesson
+      );
+      if (balance > 0 && balance <= upcoming.length) {
+        reminders.push({ student, lesson: upcoming[balance - 1], state: "last" });
+      }
+    }
+    return reminders;
+  }
+
+  function reminderActions(reminder) {
+    return `<div class="credit-alert-actions"><button class="btn btn-soft" data-action="open-student" data-id="${reminder.student.id}">查看學生</button><button class="btn btn-primary" data-action="add-credit" data-id="${reminder.student.id}">新增堂數</button></div>`;
+  }
+
+  function renderTodayCreditReminder(todayLessons) {
+    const reminders = todayCreditReminders(todayLessons);
+    if (!reminders.length) return "";
+    if (reminders.length === 1) {
+      const reminder = reminders[0];
+      const message = reminder.state === "usedUp"
+        ? `${reminder.student.name}的堂數已用完`
+        : `${reminder.student.name}｜今天 ${reminder.lesson.startTime}｜今天是最後 1 堂`;
+      return `<aside class="credit-alert" aria-label="堂數提醒"><strong>${escapeHtml(message)}</strong>${reminderActions(reminder)}</aside>`;
+    }
+    return `<aside class="credit-alert" aria-label="堂數提醒"><strong>今天有 ${reminders.length} 位學生即將用完堂數</strong><details><summary>展開查看</summary>${reminders.map(reminder => {
+      const text = reminder.state === "usedUp" ? `${reminder.student.name}的堂數已用完` : `${reminder.student.name}｜${reminder.lesson.startTime}｜最後 1 堂`;
+      return `<div class="credit-alert-item"><p>${escapeHtml(text)}</p>${reminderActions(reminder)}</div>`;
+    }).join("")}</details></aside>`;
   }
 
   function getWeekStartMonday(centerISO) {
@@ -1594,7 +1649,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function lessonsOn(date) {
-    return state.lessons.filter(lesson => lesson.date === date).sort((a, b) => {
+    return activeLessons().filter(lesson => lesson.date === date).sort((a, b) => {
       const timeOrder = a.startTime.localeCompare(b.startTime);
       return timeOrder || a.endTime.localeCompare(b.endTime);
     });
@@ -1661,8 +1716,8 @@ textarea { min-height: 96px; resize: vertical; }
     if (visibleEnd <= visibleStart) return "";
     const top = ((visibleStart - rangeStart) / 60) * WEEK_HOUR_HEIGHT;
     const height = Math.max(26, ((visibleEnd - visibleStart) / 60) * WEEK_HOUR_HEIGHT - 3);
-    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
-    const color = calendarColorIndex(lesson.studentId);
+    const student = lessonDisplayPerson(lesson);
+    const color = calendarColorIndex(lesson.studentId || lesson.trial?.name);
     const cancelled = lesson.status === "cancelled" ? "cancelled" : "";
     const label = `${lesson.startTime} 到 ${lesson.endTime}，${student.name}，${lesson.subject}，${STATUS_LABELS[lesson.status] || lesson.status}`;
     const laneLeft = (lane / laneCount) * 100;
@@ -1732,7 +1787,7 @@ textarea { min-height: 96px; resize: vertical; }
     const currentMonth = ui.selectedDate.slice(0, 7);
     const today = todayISO();
     const lessonsByDate = new Map();
-    for (const lesson of state.lessons) {
+    for (const lesson of activeLessons()) {
       if (lesson.date >= dates[0] && lesson.date <= dates[dates.length - 1]) {
         if (!lessonsByDate.has(lesson.date)) lessonsByDate.set(lesson.date, []);
         lessonsByDate.get(lesson.date).push(lesson);
@@ -1805,8 +1860,11 @@ textarea { min-height: 96px; resize: vertical; }
       return renderStudents();
     }
     const remaining = calculateRemainingLessons(student);
-    const lessons = state.lessons.filter(l => l.studentId === student.id).sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
+    const lessons = activeLessons().filter(l => l.studentId === student.id).sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
     const records = lessons.map(l => ({ lesson: l, record: recordByLessonId(l.id) })).filter(x => x.record);
+    const transactions = (state.lessonCreditTransactions || [])
+      .filter(transaction => transaction.studentId === student.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return `
       <div class="page-title-row"><button class="back-btn" data-action="back-students" aria-label="返回學生列表">←</button><h1 style="flex:1;text-align:center">學生資料</h1><span style="width:42px"></span></div>
       <section class="detail-hero">
@@ -1817,18 +1875,69 @@ textarea { min-height: 96px; resize: vertical; }
           <div class="info-cell"><small>購買總堂數</small><strong>${student.totalLessons == null ? "—" : student.totalLessons}</strong></div>
           <div class="info-cell"><small>每堂費用</small><strong>${money(student.pricePerLesson)}</strong></div>
         </div>
-        <div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯資料</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button></div>
+        <div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯資料</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button>${student.billingType === "package" ? `<button class="btn btn-soft" style="grid-column:1/-1" data-action="add-credit" data-id="${student.id}">＋ 新增堂數</button>` : ""}</div>
         ${student.contactNote ? `<p class="lesson-meta" style="margin:14px 2px 0">聯絡備註：${escapeHtml(student.contactNote)}</p>` : ""}
         ${student.notes ? `<p class="lesson-meta" style="margin:8px 2px 0">學生備註：${escapeHtml(student.notes)}</p>` : ""}
       </section>
       <section class="section"><div class="section-heading"><h2>上課紀錄</h2><span class="subtle">${records.length} 筆</span></div>
       <div class="card-list">${records.length ? records.map(({ lesson, record }) => `<article class="record-card"><button class="card-hit" style="width:100%;border:0;background:transparent;text-align:left;padding:0" data-action="edit-record" data-id="${lesson.id}"><div class="record-row"><div><h3>${formatShortDate(lesson.date)} · ${lesson.startTime}</h3><div class="lesson-meta">${escapeHtml(lesson.subject)} · ${record.deductLesson ? "有扣堂" : "未扣堂"}</div></div>${statusBadge(record.status)}</div>${record.note ? `<p>${escapeHtml(record.note)}</p>` : ""}</button></article>`).join("") : emptyState("還沒有上課紀錄", "完成課程後，紀錄會自動出現在這裡。")}</div></section>
+      ${student.billingType === "package" ? `<section class="section"><div class="section-heading"><h2>堂數異動</h2><span class="subtle">${transactions.length} 筆</span></div>
+        <div class="card-list">${transactions.length ? transactions.map(transaction => `<article class="record-card"><div class="record-row"><div><h3>${escapeHtml(CREDIT_TYPE_LABELS[transaction.type] || transaction.type)}${transaction.reversedAt ? "（已撤銷）" : ""}</h3><div class="lesson-meta">${escapeHtml(new Date(transaction.createdAt).toLocaleString("zh-TW"))}${transaction.reason ? ` · ${escapeHtml(transaction.reason)}` : ""}</div></div><strong style="color:${transaction.amount >= 0 ? "var(--green)" : "var(--red)"}">${transaction.amount > 0 ? "+" : ""}${transaction.amount}</strong></div></article>`).join("") : emptyState("還沒有堂數異動", "新增堂數或完成扣堂後會顯示在這裡。")}</div>
+      </section>` : ""}
       ${bottomNav()}`;
+  }
+
+  function formatFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return "大小未知";
+    if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(value / 1024))} KB`;
+  }
+
+  function renderAndroidUpdateSettings() {
+    if (!window.AndroidUpdater) return "";
+    const update = androidUpdateState || {
+      currentVersion: APP_VERSION,
+      status: "idle",
+      autoCheck: true,
+      wifiOnly: true,
+    };
+    const statusText = update.message || ({
+      idle: "尚未檢查更新",
+      checking: "正在檢查更新…",
+      current: "目前已是最新版本",
+      available: `有新版本 ${update.latestVersion || ""}`,
+      downloading: `下載中 ${update.downloadProgress || 0}%`,
+      ready: "APK 已下載，可繼續安裝",
+      installing: "等待 Android 系統安裝確認",
+      error: "更新發生錯誤",
+    }[update.status] || "");
+    const action = update.status === "available"
+      ? `<button class="btn btn-primary" data-action="download-update">下載並更新</button><button class="btn btn-soft" data-action="dismiss-update">稍後</button>`
+      : update.status === "ready" || update.hasDownloadedApk
+        ? `<button class="btn btn-primary" data-action="continue-update">繼續安裝</button><button class="btn btn-soft" data-action="download-update">重新下載</button>`
+        : `<button class="btn btn-soft btn-full" data-action="check-update">檢查更新</button>`;
+    return `<section class="section"><div class="section-heading"><h2>Android App 更新</h2></div>
+      <div class="detail-hero">
+        <div class="record-row"><div><strong>目前版本 ${escapeHtml(update.currentVersion || APP_VERSION)}</strong><div class="lesson-meta">${escapeHtml(statusText)}</div></div>${update.latestVersion ? `<span class="status status-scheduled">最新 ${escapeHtml(update.latestVersion)}</span>` : ""}</div>
+        ${update.status === "downloading" ? `<div class="repeat-summary" style="margin-top:10px"><strong>下載進度 ${Number(update.downloadProgress || 0)}%</strong></div>` : ""}
+        ${update.apkName ? `<p class="lesson-meta">${escapeHtml(update.apkName)} · ${formatFileSize(update.apkSize)}</p>` : ""}
+        <div class="detail-actions">${action}</div>
+      </div>
+      <div class="settings-card">
+        <label class="settings-item"><span><strong>啟動時自動檢查</strong><br><small>只讀 GitHub 最新正式 Release</small></span><span class="toggle"><input id="android-auto-check" type="checkbox" ${update.autoCheck !== false ? "checked" : ""}><span class="slider"></span></span></label>
+        <label class="settings-item"><span><strong>僅 Wi-Fi 下載</strong><br><small>關閉後可能使用行動數據</small></span><span class="toggle"><input id="android-wifi-only" type="checkbox" ${update.wifiOnly !== false ? "checked" : ""}><span class="slider"></span></span></label>
+      </div>
+      <p class="export-note">上次檢查：${update.lastCheckedAt ? escapeHtml(new Date(update.lastCheckedAt).toLocaleString("zh-TW")) : "尚未檢查"}。下載不會開啟瀏覽器，完成後仍須在 Android 系統畫面確認安裝。</p>
+    </section>`;
   }
 
   function renderMore() {
     const profile = state.teacherProfile || defaultTeacherProfile();
     const profileMeta = profile.subjects.length ? profile.subjects.join("、") : "尚未設定授課科目";
+    const hasDemoData = state.students.some(item => item.isDemoData) || state.lessons.some(item => item.isDemoData);
+    let hasRecoveryData = false;
+    try { hasRecoveryData = Boolean(localStorage.getItem(`${STORAGE_KEY}_recovery`)); } catch (error) { console.warn("無法讀取復原備份狀態", error); }
     return `
       ${topbar()}
       <div class="page-title-row"><h1>更多</h1></div>
@@ -1837,6 +1946,8 @@ textarea { min-height: 96px; resize: vertical; }
         <div class="settings-card">
           <button class="settings-item" data-action="edit-teacher"><span><strong>老師資訊</strong><br><small>姓名、聯絡方式與課程預設值</small></span><span>›</span></button>
           <button class="settings-item" data-action="install-app"><span><strong>安裝到手機</strong><br><small>加入主畫面，像 App 一樣開啟並支援離線</small></span><span>›</span></button>
+          <button class="settings-item" data-action="show-guide"><span><strong>使用教學</strong><br><small>查看固定排課、扣堂與資料安全說明</small></span><span>›</span></button>
+          <button class="settings-item" data-action="restart-onboarding"><span><strong>重新觀看首次介紹</strong><br><small>從歡迎畫面重新開始四步介紹</small></span><span>›</span></button>
         </div>
       </section>
       <section class="section"><div class="section-heading"><h2>資料備份</h2></div>
@@ -1844,11 +1955,14 @@ textarea { min-height: 96px; resize: vertical; }
           <button class="settings-item" data-action="export-json"><span><strong>下載完整備份（JSON）</strong><br><small>包含老師、學生、課程與堂數紀錄</small></span><span>↓</span></button>
           <button class="settings-item" data-action="export-csv"><span><strong>下載課程明細（CSV）</strong><br><small>可用 Excel 或 Google 試算表開啟</small></span><span>↓</span></button>
           <button class="settings-item" data-action="import-data"><span><strong>匯入資料</strong><br><small>選擇先前匯出的 JSON</small></span><span>›</span></button>
+          ${hasRecoveryData ? `<button class="settings-item" data-action="export-recovery"><span><strong>下載原始復原備份</strong><br><small>遷移失敗時保留下來的未修改資料</small></span><span>↓</span></button>` : ""}
+          ${hasDemoData ? `<button class="settings-item" data-action="clear-demo"><span><strong>清除示範資料</strong><br><small>只移除標示為示範的學生、課程與紀錄</small></span><span>›</span></button>` : ""}
           <button class="settings-item" data-action="reset-demo"><span><strong>重新載入示範資料</strong><br><small>會覆蓋目前資料</small></span><span>›</span></button>
           <button class="settings-item" data-action="clear-data"><span style="color:var(--red)"><strong>清除全部資料</strong><br><small>此操作無法復原</small></span><span>›</span></button>
         </div>
         <p class="export-note">CSV 僅包含課程明細，不會匯出老師電話、Email 或其他聯絡資料。</p>
       </section>
+      ${renderAndroidUpdateSettings()}
       <input class="file-input" id="import-file" type="file" accept="application/json,.json" />
       <div class="version">小課表 MVP ${APP_VERSION}</div>
       ${bottomNav()}`;
@@ -1880,6 +1994,34 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function closeSheet() { $("#overlay-root").innerHTML = ""; }
+
+  function callAndroidUpdater(method, ...args) {
+    try {
+      if (!window.AndroidUpdater || typeof window.AndroidUpdater[method] !== "function") throw new Error("目前不是 Android App");
+      window.AndroidUpdater[method](...args);
+    } catch (error) {
+      toast(error.message || "Android 更新功能暫時無法使用", "error");
+    }
+  }
+
+  function showAndroidUpdateSheet(update) {
+    openSheet(`小課表 ${update.latestVersion}`, `
+      <div class="form-grid">
+        <div class="detail-hero"><div class="record-row"><div><strong>發現新版本</strong><div class="lesson-meta">${escapeHtml(update.apkName || "正式版 APK")} · ${formatFileSize(update.apkSize)}</div></div><span class="status status-scheduled">${escapeHtml(update.latestVersion || "")}</span></div></div>
+        <div class="field"><label>更新內容</label><div class="repeat-summary" style="white-space:pre-wrap;max-height:180px;overflow:auto">${escapeHtml(update.releaseNotes || "此版本未提供更新說明。")}</div></div>
+        <p class="export-note">APK 會在 App 內背景下載，不會開啟瀏覽器；下載後由 Android 系統顯示安裝確認。</p>
+        <div class="detail-actions"><button class="btn btn-soft" data-action="dismiss-update">稍後</button><button class="btn btn-primary" data-action="download-update">下載並更新</button></div>
+      </div>`);
+  }
+
+  window.onAndroidUpdateState = update => {
+    androidUpdateState = update;
+    if (ui.tab === "more" && !ui.studentDetailId) render();
+    if (update?.status === "available" && update.latestVersion && lastPromptedAndroidVersion !== update.latestVersion) {
+      lastPromptedAndroidVersion = update.latestVersion;
+      showAndroidUpdateSheet(update);
+    }
+  };
 
   async function installApp() {
     if (deferredInstallPrompt) {
@@ -1966,7 +2108,7 @@ textarea { min-height: 96px; resize: vertical; }
 
   function courseDetailSheet(lesson) {
     if (!lesson) return;
-    const student = studentById(lesson.studentId) || { name: "已刪除學生" };
+    const student = lessonDisplayPerson(lesson);
     const place = lesson.location || (lesson.mode === "online" ? "線上" : "未填地點");
     const primaryAction = lesson.status === "scheduled"
       ? `<button class="btn btn-soft" data-action="start-lesson" data-id="${lesson.id}">開始上課</button><button class="btn btn-primary" data-action="quick-complete" data-id="${lesson.id}">記一堂</button>`
@@ -1977,14 +2119,223 @@ textarea { min-height: 96px; resize: vertical; }
       <section class="detail-hero">
         <div class="record-row"><div><h3 style="margin:0 0 5px">${escapeHtml(student.name)} · ${escapeHtml(lesson.subject)}</h3><div class="lesson-meta">${formatDate(lesson.date)} · ${escapeHtml(lesson.startTime)}–${escapeHtml(lesson.endTime)}</div></div>${statusBadge(lesson.status)}</div>
         <p class="lesson-meta" style="margin:12px 0 0">${lesson.mode === "online" ? "線上" : "實體"} · ${escapeHtml(place)}</p>
+        ${lesson.lessonType === "trial" ? `<p class="lesson-meta" style="margin:7px 0 0">試教結果：${escapeHtml(TRIAL_RESULT_LABELS[lesson.trial?.result] || "待確認")}${lesson.trial?.source ? ` · 來源：${escapeHtml(lesson.trial.source)}` : ""}${lesson.trial?.fee ? ` · ${money(lesson.trial.fee)}` : ""}</p>` : ""}
         ${lesson.notes ? `<p class="lesson-meta" style="margin:7px 0 0">備註：${escapeHtml(lesson.notes)}</p>` : ""}
         ${primaryAction ? `<div class="detail-actions">${primaryAction}</div>` : ""}
         <div class="detail-actions">
           <button class="btn btn-soft" data-action="edit-lesson" data-id="${lesson.id}">編輯課程</button>
           <button class="btn btn-soft" data-action="copy-lesson" data-id="${lesson.id}">複製課程</button>
+          ${lesson.lessonType === "trial" && !lesson.trial?.convertedStudentId ? `<button class="btn btn-primary" style="grid-column:1/-1" data-action="convert-trial" data-id="${lesson.id}">轉為正式學生</button>` : ""}
           <button class="btn btn-ghost" style="grid-column:1/-1" data-action="lesson-more" data-id="${lesson.id}">${lesson.recordId ? "查看／修改上課紀錄" : "完成、請假、改期或取消"}</button>
+          <button class="btn btn-danger" style="grid-column:1/-1" data-action="delete-lesson" data-id="${lesson.id}">刪除課程</button>
         </div>
       </section>`);
+  }
+
+  function restoreDeletedLesson(lessonId) {
+    try {
+      const result = Domain.restoreLessonTransaction(state, { lessonId, now: new Date().toISOString() });
+      saveData();
+      ui.tab = "schedule";
+      ui.selectedDate = result.lesson.date;
+      render();
+      toast("課程與相關堂數已復原");
+    } catch (error) {
+      toast(error.message || "無法復原課程", "error");
+    }
+  }
+
+  function deleteLessonSheet(lesson) {
+    if (!lesson || lesson.deletedAt) return;
+    if (!confirm(`確定要刪除 ${formatDate(lesson.date)} ${lesson.startTime} 的課程嗎？`)) return;
+    const record = recordByLessonId(lesson.id);
+    const deducted = Boolean(record?.deductLesson);
+    openSheet("再次確認刪除", `
+      <form id="delete-lesson-form" class="form-grid">
+        <div class="warning"><strong>刪除後課程會從一般課表移除。</strong><br>取消課程則會保留在課表中，兩者用途不同。</div>
+        ${deducted ? `<div class="field"><label>這堂課曾扣除 1 堂，請選擇堂數處理方式</label>
+          <div class="status-options">
+            <label class="status-option"><input type="radio" name="creditChoice" value="restore" checked><span>刪除並加回 1 堂</span></label>
+            <label class="status-option"><input type="radio" name="creditChoice" value="keep"><span>僅刪除，不調整堂數</span></label>
+          </div></div>` : `<p class="lesson-meta">這堂課沒有扣堂，刪除不會變更剩餘堂數。</p>`}
+        <div class="sheet-footer"><button class="btn btn-danger btn-full" type="submit">確認刪除課程</button></div>
+      </form>`, root => {
+        const form = $("#delete-lesson-form", root);
+        let submitting = false;
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (submitting) return;
+          submitting = true;
+          const button = $('button[type="submit"]', form);
+          button.disabled = true;
+          try {
+            const restoreCredit = deducted && new FormData(form).get("creditChoice") === "restore";
+            Domain.deleteLessonTransaction(state, {
+              lessonId: lesson.id,
+              restoreCredit,
+              idFactory: uid,
+              now: new Date().toISOString(),
+            });
+            saveData();
+            closeSheet();
+            render();
+            toast("課程已刪除", "success", {
+              duration: 8000,
+              actions: [{ label: "復原", handler: () => restoreDeletedLesson(lesson.id) }],
+            });
+          } catch (error) {
+            submitting = false;
+            button.disabled = false;
+            toast(error.message || "刪除課程失敗", "error");
+          }
+        });
+      });
+  }
+
+  function convertTrialSheet(lesson) {
+    if (!lesson || lesson.lessonType !== "trial" || lesson.trial?.convertedStudentId) return;
+    const defaultDate = addDays(lesson.date, 7);
+    openSheet("轉為正式學生", `
+      <form id="convert-trial-form" class="form-grid" novalidate>
+        <div class="field"><label for="convert-name">姓名 *</label><input id="convert-name" name="name" maxlength="100" value="${escapeHtml(lesson.trial?.name || "")}"></div>
+        <div class="field"><label for="convert-contact">聯絡資訊</label><input id="convert-contact" name="contact" maxlength="300" value="${escapeHtml(lesson.trial?.contact || "")}"></div>
+        <div class="field"><label for="convert-subject">正式科目 *</label><input id="convert-subject" name="subject" maxlength="100" value="${escapeHtml(lesson.subject || "")}"></div>
+        <div class="form-row"><div class="field"><label for="convert-credits">初始堂數 *</label><input id="convert-credits" name="credits" type="number" min="1" max="999" step="1" value="4"></div><div class="field"><label for="convert-price">正式每堂費用</label><input id="convert-price" name="price" type="number" min="0" step="50" value="${lesson.trial?.fee || ""}"></div></div>
+        <div class="toggle-row"><div><strong>將試教計入正式已上堂數</strong><div class="lesson-meta">預設關閉；開啟後會明確扣除 1 堂</div></div><label class="toggle"><input name="includeTrial" type="checkbox"><span class="slider"></span></label></div>
+        <div class="toggle-row"><div><strong>建立每週固定課程</strong><div class="lesson-meta">沿用試教的星期與時間，衝堂時往後補足</div></div><label class="toggle"><input id="convert-create-schedule" name="createSchedule" type="checkbox" checked><span class="slider"></span></label></div>
+        <div id="convert-schedule-fields" class="form-grid">
+          <div class="field"><label for="convert-date">正式課開始日期</label><input id="convert-date" name="date" type="date" value="${defaultDate}"></div>
+          <div class="form-row"><div class="field"><label for="convert-start">固定開始時間</label><input id="convert-start" name="startTime" type="time" value="${lesson.startTime}"></div><div class="field"><label for="convert-end">固定結束時間</label><input id="convert-end" name="endTime" type="time" value="${lesson.endTime}"></div></div>
+          <div class="field"><label for="convert-count">先排幾堂（1～100）</label><input id="convert-count" name="scheduleCount" type="number" min="1" max="100" step="1" value="4"></div>
+        </div>
+        <div class="form-error" data-error="form"></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">建立正式學生</button></div>
+      </form>`, root => {
+        const form = $("#convert-trial-form", root);
+        const scheduleToggle = $("#convert-create-schedule", root);
+        scheduleToggle.addEventListener("change", () => {
+          $("#convert-schedule-fields", root).style.display = scheduleToggle.checked ? "grid" : "none";
+        });
+        let submitting = false;
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (submitting) return;
+          const fd = new FormData(form);
+          const name = String(fd.get("name") || "").trim();
+          const subject = String(fd.get("subject") || "").trim();
+          const credits = Number(fd.get("credits"));
+          const scheduleCount = Number(fd.get("scheduleCount"));
+          const createSchedule = fd.get("createSchedule") === "on";
+          const startTime = String(fd.get("startTime") || "");
+          const endTime = String(fd.get("endTime") || "");
+          const error = $('[data-error="form"]', form);
+          error.textContent = "";
+          if (!name || !subject) { error.textContent = "請填寫姓名與正式科目"; return; }
+          if (!Number.isInteger(credits) || credits < 1 || credits > 999) { error.textContent = "初始堂數必須是 1～999 的整數"; return; }
+          if (createSchedule && (!Number.isInteger(scheduleCount) || scheduleCount < 1 || scheduleCount > 100)) { error.textContent = "排課堂數必須是 1～100 的整數"; return; }
+          if (createSchedule && timeToMinutes(endTime) <= timeToMinutes(startTime)) { error.textContent = "結束時間必須晚於開始時間"; return; }
+          submitting = true;
+          const submitButton = $('button[type="submit"]', form);
+          submitButton.disabled = true;
+          try {
+            const now = new Date().toISOString();
+            const student = {
+              id: uid("stu"),
+              name,
+              subject,
+              phone: "",
+              contactNote: String(fd.get("contact") || "").trim(),
+              billingType: "package",
+              totalLessons: credits,
+              usedLessons: 0,
+              pricePerLesson: fd.get("price") ? Number(fd.get("price")) : null,
+              defaultDuration: Math.max(30, timeToMinutes(lesson.endTime) - timeToMinutes(lesson.startTime)),
+              notes: `由 ${formatDate(lesson.date)} 試教轉為正式學生`,
+              isDemoData: Boolean(lesson.isDemoData),
+              createdAt: now,
+              updatedAt: now,
+            };
+            state.students.push(student);
+            Domain.addCreditTransaction(state, {
+              id: uid("credit"),
+              studentId: student.id,
+              type: "purchase",
+              amount: credits,
+              reason: "試教轉正式的初始堂數",
+              createdAt: now,
+              isDemoData: Boolean(lesson.isDemoData),
+            });
+            if (fd.get("includeTrial") === "on") {
+              lesson.studentId = student.id;
+              let trialRecord = recordByLessonId(lesson.id);
+              if (!trialRecord) {
+                trialRecord = { id: uid("record"), lessonId: lesson.id, studentId: student.id, status: "completed", deductLesson: true, note: "試教轉正式時明確計入堂數", deletedAt: null, recordedAt: now, updatedAt: now, isDemoData: Boolean(lesson.isDemoData) };
+                state.lessonRecords.push(trialRecord);
+                lesson.recordId = trialRecord.id;
+                lesson.status = "completed";
+              } else {
+                trialRecord.studentId = student.id;
+                trialRecord.deductLesson = true;
+                trialRecord.updatedAt = now;
+              }
+              Domain.addCreditTransaction(state, {
+                id: uid("credit"),
+                studentId: student.id,
+                type: "deduction",
+                amount: -1,
+                reason: "老師選擇將試教計入正式堂數",
+                relatedLessonId: lesson.id,
+                createdAt: now,
+                isDemoData: Boolean(lesson.isDemoData),
+              });
+              Domain.syncStudentUsedLessons(state, student.id);
+            }
+            if (createSchedule) {
+              const baseLesson = {
+                id: uid("lesson"),
+                studentId: student.id,
+                subject,
+                date: String(fd.get("date")),
+                startTime,
+                endTime,
+                mode: lesson.mode,
+                location: lesson.location,
+                lessonType: "formal",
+                trial: null,
+                recurrenceGroupId: null,
+                status: "scheduled",
+                startedAt: null,
+                recordId: null,
+                notes: "",
+                isDemoData: Boolean(lesson.isDemoData),
+                createdAt: now,
+                updatedAt: now,
+              };
+              const plan = Domain.planRecurrence({
+                startDate: baseLesson.date,
+                weekdays: [weekdayNumber(baseLesson.date)],
+                targetCount: scheduleCount,
+                baseLesson,
+              }, state.lessons, { autoSupplement: true, maxWeeks: 104 });
+              if (plan.limitReached) throw new Error("104 週內無法補足固定課程，請調整日期或時間");
+              state.lessons.push(...materializeRecurringLessons(baseLesson, plan.accepted));
+            }
+            lesson.trial.result = "converted";
+            lesson.trial.convertedStudentId = student.id;
+            lesson.updatedAt = now;
+            saveData();
+            closeSheet();
+            ui.tab = "students";
+            ui.studentDetailId = student.id;
+            render();
+            toast(`已將 ${student.name} 轉為正式學生`);
+          } catch (errorValue) {
+            submitting = false;
+            submitButton.disabled = false;
+            error.textContent = errorValue.message || "轉為正式學生失敗";
+          }
+        });
+      });
   }
 
   function studentForm(student = null) {
@@ -2040,12 +2391,116 @@ textarea { min-height: 96px; resize: vertical; }
             pricePerLesson: fd.get("pricePerLesson") ? Number(fd.get("pricePerLesson")) : null,
             defaultDuration: Number(fd.get("defaultDuration")),
             notes: String(fd.get("notes") || "").trim(),
+            isDemoData: Boolean(student?.isDemoData),
             createdAt: student?.createdAt || now,
             updatedAt: now,
           };
-          if (editing) state.students = state.students.map(s => s.id === student.id ? next : s);
-          else state.students.push(next);
+          if (editing) {
+            state.students = state.students.map(s => s.id === student.id ? next : s);
+            const previousTotal = student.billingType === "package" ? Number(student.totalLessons || 0) : 0;
+            const nextTotal = billingType === "package" ? Number(totalLessons || 0) : 0;
+            const adjustment = nextTotal - previousTotal;
+            if (adjustment) {
+              Domain.addCreditTransaction(state, {
+                id: uid("credit"),
+                studentId: next.id,
+                type: "manualAdjustment",
+                amount: adjustment,
+                reason: "編輯學生時調整購買總堂數",
+                createdAt: now,
+                isDemoData: Boolean(next.isDemoData),
+              });
+            }
+          } else {
+            state.students.push(next);
+            if (billingType === "package") {
+              Domain.addCreditTransaction(state, {
+                id: uid("credit"),
+                studentId: next.id,
+                type: "purchase",
+                amount: totalLessons,
+                reason: "建立學生的初始堂數",
+                createdAt: now,
+              });
+            }
+          }
           saveData(); closeSheet(); ui.tab = "students"; ui.studentDetailId = editing ? next.id : null; render(); toast(editing ? "學生資料已更新" : "學生已新增");
+        });
+      });
+  }
+
+  function creditSheet(student) {
+    if (!student || student.billingType !== "package") return;
+    const current = calculateRemainingLessons(student);
+    const presets = [1, 2, 4, 8, 12, 16, 20];
+    openSheet("新增堂數", `
+      <form id="credit-form" class="form-grid" novalidate>
+        <div class="detail-hero" style="margin:0"><div class="record-row"><div><strong>${escapeHtml(student.name)}</strong><div class="lesson-meta">目前剩餘堂數</div></div><strong>${current}</strong></div></div>
+        <div class="field"><label>本次新增</label><div class="repeat-presets">${presets.map(value => `<button type="button" class="repeat-preset ${value === 4 ? "active" : ""}" data-credit-value="${value}">${value} 堂</button>`).join("")}<button type="button" class="repeat-preset" data-credit-value="custom">自訂</button></div></div>
+        <div class="field" id="custom-credit-field" hidden><label for="custom-credit">自訂堂數（1～999）</label><input id="custom-credit" name="customCredit" type="number" min="1" max="999" step="1" inputmode="numeric" value="1"><div class="form-error" data-error="amount"></div></div>
+        <div class="field"><label for="credit-type">異動類型</label><select id="credit-type" name="type"><option value="purchase">購買</option><option value="gift">贈送</option><option value="manualAdjustment">人工修正</option></select></div>
+        <div class="field"><label for="credit-reason">原因／備註</label><input id="credit-reason" name="reason" maxlength="500" placeholder="例如：購買 4 堂方案"></div>
+        <div id="credit-preview" class="repeat-summary" aria-live="polite"></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">確認新增</button></div>
+      </form>`, root => {
+        const form = $("#credit-form", root);
+        const customField = $("#custom-credit-field", root);
+        const customInput = $("#custom-credit", root);
+        let selected = 4;
+        let submitting = false;
+        const amount = () => selected === "custom" ? Number(customInput.value) : Number(selected);
+        const updatePreview = () => {
+          const value = amount();
+          const valid = Number.isInteger(value) && value >= 1 && value <= 999;
+          $("#credit-preview", root).innerHTML = valid
+            ? `本次新增 <strong>${value}</strong> 堂<br>新增後剩餘 <strong>${current + value}</strong> 堂`
+            : "請輸入 1～999 的整數";
+        };
+        $$("[data-credit-value]", root).forEach(button => button.addEventListener("click", () => {
+          selected = button.dataset.creditValue === "custom" ? "custom" : Number(button.dataset.creditValue);
+          $$("[data-credit-value]", root).forEach(item => item.classList.toggle("active", item === button));
+          customField.hidden = selected !== "custom";
+          if (selected === "custom") customInput.focus();
+          updatePreview();
+        }));
+        customInput.addEventListener("input", updatePreview);
+        updatePreview();
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (submitting) return;
+          const value = amount();
+          const error = $('[data-error="amount"]', form);
+          error.textContent = "";
+          if (!Number.isInteger(value) || value < 1 || value > 999) {
+            error.textContent = "自訂堂數只能輸入 1～999 的整數";
+            return;
+          }
+          submitting = true;
+          const button = $('button[type="submit"]', form);
+          button.disabled = true;
+          try {
+            const now = new Date().toISOString();
+            Domain.addCreditTransaction(state, {
+              id: uid("credit"),
+              studentId: student.id,
+              type: String(new FormData(form).get("type")),
+              amount: value,
+              reason: String(new FormData(form).get("reason") || "").trim() || `新增 ${value} 堂`,
+              createdAt: now,
+              isDemoData: Boolean(student.isDemoData),
+            });
+            student.totalLessons = Number(student.totalLessons || 0) + value;
+            student.updatedAt = now;
+            saveData();
+            closeSheet();
+            ui.studentDetailId = student.id;
+            render();
+            toast(`已新增 ${value} 堂，現在剩餘 ${calculateRemainingLessons(student)} 堂`);
+          } catch (errorValue) {
+            submitting = false;
+            button.disabled = false;
+            error.textContent = errorValue.message || "新增堂數失敗";
+          }
         });
       });
   }
@@ -2057,16 +2512,12 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function lessonForm(lesson = null, presetStudentId = null, templateLesson = null, preset = {}) {
-    if (!state.students.length) {
-      toast("請先新增學生", "error");
-      studentForm();
-      return;
-    }
     const editing = Boolean(lesson);
     const copying = Boolean(templateLesson) && !editing;
     const recents = recentStudents(4);
-    const selectedStudentId = lesson?.studentId || templateLesson?.studentId || presetStudentId || recents[0]?.id || state.students[0].id;
+    const selectedStudentId = lesson?.studentId || templateLesson?.studentId || presetStudentId || recents[0]?.id || state.students[0]?.id || "";
     const defaultStudent = studentById(selectedStudentId);
+    const initialLessonType = lesson?.lessonType || templateLesson?.lessonType || (state.students.length ? "formal" : "trial");
     const teacherDefaults = normalizeTeacherProfile(state.teacherProfile);
     const hasStudentLessonSettings = Boolean(latestLessonForStudent(selectedStudentId, lesson?.id));
     const copiedDate = templateLesson ? addDays(templateLesson.date, 7) : null;
@@ -2075,14 +2526,25 @@ textarea { min-height: 96px; resize: vertical; }
     const endTime = lesson?.endTime || templateLesson?.endTime || addMinutes(startTime, defaultStudent?.defaultDuration || teacherDefaults.defaultDuration || 60);
     const initialMode = lesson?.mode || templateLesson?.mode || (!hasStudentLessonSettings && teacherDefaults.defaultLessonMode) || "inPerson";
     const initialLocation = lesson?.location ?? templateLesson?.location ?? (!hasStudentLessonSettings ? teacherDefaults.defaultLocation : "");
-    const initialSubject = lesson?.subject || templateLesson?.subject || defaultStudent?.subject || "";
+    const initialSubject = lesson?.subject || templateLesson?.subject || defaultStudent?.subject || (initialLessonType === "trial" ? "試教" : "");
     const initialNotes = lesson?.notes || "";
 
     openSheet(editing ? "編輯課程" : (copying ? "複製課程" : "新增課程"), `
       <form id="lesson-form" class="form-grid" novalidate>
-        ${editing ? "" : `<div class="field"><label>最近學生</label><div class="recent-student-row">${recents.map(s => `<button class="recent-student-chip ${s.id === selectedStudentId ? "active" : ""}" type="button" data-recent-student="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(s.subject)}</button>`).join("")}</div></div>`}
-        <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId">${state.students.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
-        ${editing ? "" : `<div id="last-lesson-template"></div>`}
+        ${editing && lesson.recordId
+          ? `<input type="hidden" name="lessonType" value="${initialLessonType}"><div class="field"><label>課程類型</label><div class="repeat-summary"><strong>${initialLessonType === "trial" ? "試教課程" : "正式課程"}</strong><br>已有上課紀錄後不可直接變更類型。</div></div>`
+          : `<div class="field"><label>課程類型</label><div class="segmented"><label><input type="radio" name="lessonType" value="formal" ${initialLessonType === "formal" ? "checked" : ""}><span>正式課程</span></label><label><input type="radio" name="lessonType" value="trial" ${initialLessonType === "trial" ? "checked" : ""}><span>試教課程</span></label></div></div>`}
+        <div id="formal-lesson-fields">
+          ${editing ? "" : `<div class="field"><label>最近學生</label><div class="recent-student-row">${recents.map(s => `<button class="recent-student-chip ${s.id === selectedStudentId ? "active" : ""}" type="button" data-recent-student="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(s.subject)}</button>`).join("")}</div></div>`}
+          <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId"><option value="">請選擇學生</option>${state.students.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
+          ${editing ? "" : `<div id="last-lesson-template"></div>`}
+        </div>
+        <div id="trial-lesson-fields" class="form-grid">
+          <div class="field"><label for="trial-name">試教學生姓名 *</label><input id="trial-name" name="trialName" maxlength="100" value="${escapeHtml(lesson?.trial?.name || templateLesson?.trial?.name || "")}"></div>
+          <div class="form-row"><div class="field"><label for="trial-fee">試教費用</label><input id="trial-fee" name="trialFee" type="number" min="0" step="50" value="${lesson?.trial?.fee || templateLesson?.trial?.fee || ""}"></div><div class="field"><label for="trial-source">來源</label><input id="trial-source" name="trialSource" maxlength="200" value="${escapeHtml(lesson?.trial?.source || templateLesson?.trial?.source || "")}" placeholder="例如：朋友介紹"></div></div>
+          <div class="field"><label for="trial-contact">聯絡資訊</label><input id="trial-contact" name="trialContact" maxlength="300" value="${escapeHtml(lesson?.trial?.contact || templateLesson?.trial?.contact || "")}" placeholder="電話、LINE 或家長聯絡方式"></div>
+          <div class="field"><label for="trial-result">試教結果</label><select id="trial-result" name="trialResult">${Object.entries(TRIAL_RESULT_LABELS).map(([value, label]) => `<option value="${value}" ${(lesson?.trial?.result || "pending") === value ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+        </div>
         <div class="field"><label for="lesson-subject">科目 *</label><input id="lesson-subject" name="subject" value="${escapeHtml(initialSubject)}" required /></div>
         <div class="field"><label for="lesson-date">開始日期 *</label><input id="lesson-date" name="date" type="date" value="${initialDate}" required /></div>
         <div class="form-row"><div class="field"><label for="start-time">開始時間 *</label><input id="start-time" name="startTime" type="time" value="${startTime}" required /></div><div class="field"><label for="end-time">結束時間 *</label><input id="end-time" name="endTime" type="time" value="${endTime}" required /></div></div>
@@ -2095,7 +2557,7 @@ textarea { min-height: 96px; resize: vertical; }
             <button class="quick-chip" type="button" data-location-chip="Zoom" data-mode="online">Zoom</button>
           </div>
         </div>
-        ${editing ? "" : `<div class="field"><label>排課方式</label><div class="segmented"><label><input type="radio" name="repeatType" value="once" checked><span>單次</span></label><label><input type="radio" name="repeatType" value="weekly"><span>每週固定</span></label></div></div>
+        ${editing ? "" : `<div id="repeat-options"><div class="field"><label>排課方式</label><div class="segmented"><label><input type="radio" name="repeatType" value="once" checked><span>單次</span></label><label><input type="radio" name="repeatType" value="weekly"><span>每週固定</span></label></div></div>
         <div id="repeat-panel" class="repeat-panel">
           <div class="field"><label>每週上課日</label><div class="weekday-options">${[1,2,3,4,5,6,7].map(day => `<label class="weekday-option"><input type="checkbox" name="repeatWeekday" value="${day}" ${day === weekdayNumber(initialDate) ? "checked" : ""}><span>${weekdayName(day)}</span></label>`).join("")}</div></div>
           <div class="field"><label for="repeat-count">預計堂數 *</label><input id="repeat-count" name="repeatCount" type="number" min="1" max="100" step="1" value="12" /><div class="repeat-presets" style="margin-top:7px"><button type="button" class="repeat-preset" data-repeat-count="8">8 堂</button><button type="button" class="repeat-preset active" data-repeat-count="12">12 堂</button><button type="button" class="repeat-preset" data-repeat-count="24">24 堂</button></div></div>
@@ -2103,7 +2565,7 @@ textarea { min-height: 96px; resize: vertical; }
           <div id="repeat-summary" class="repeat-summary" aria-live="polite"></div>
           <div id="repeat-conflicts" class="conflict-panel" aria-live="polite"></div>
           <div id="partial-choice" class="partial-choice"><p>可回去修改日期、星期或時間；若仍要繼續，請明確選擇只建立未衝突堂數。</p><label class="inline-check"><input id="confirm-partial" name="confirmPartial" type="checkbox"><span id="partial-choice-label">我確認只建立未衝突堂數</span></label></div>
-        </div>`}
+        </div></div>`}
         <div class="field"><label for="lesson-notes">備註</label><textarea id="lesson-notes" name="notes">${escapeHtml(initialNotes)}</textarea></div>
         <div class="form-error" data-error="form"></div>
         <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">${editing ? "儲存修改" : (copying ? "複製這堂課" : "建立課程")}</button></div>
@@ -2114,6 +2576,23 @@ textarea { min-height: 96px; resize: vertical; }
         let weekdayTouched = false;
         let currentRepeatPlan = null;
         let isSubmitting = false;
+
+        const updateLessonTypeFields = () => {
+          const lessonType = new FormData(form).get("lessonType");
+          $("#formal-lesson-fields", root).style.display = lessonType === "formal" ? "block" : "none";
+          $("#trial-lesson-fields", root).style.display = lessonType === "trial" ? "grid" : "none";
+          const repeatOptions = $("#repeat-options", root);
+          if (repeatOptions) repeatOptions.style.display = lessonType === "trial" ? "none" : "block";
+          if (lessonType === "trial") {
+            const once = $('input[name="repeatType"][value="once"]', root);
+            if (once) once.checked = true;
+            if (!$("#lesson-subject", root).value.trim()) $("#lesson-subject", root).value = "試教";
+          } else if (!state.students.length) {
+            $('[data-error="form"]', form).textContent = "請先新增正式學生，或改選試教課程";
+          }
+          updateRepeatSummary();
+        };
+        $$('input[name="lessonType"]', root).forEach(input => input.addEventListener("change", updateLessonTypeFields));
 
         const selectRecentChip = studentId => {
           $$('[data-recent-student]', root).forEach(button => button.classList.toggle("active", button.dataset.recentStudent === studentId));
@@ -2259,19 +2738,29 @@ textarea { min-height: 96px; resize: vertical; }
 
         updateLastLessonTemplate();
         updateRepeatSummary();
+        updateLessonTypeFields();
 
         form.addEventListener("submit", e => {
           e.preventDefault();
           const fd = new FormData(form);
+          const lessonType = String(fd.get("lessonType") || "formal");
           const candidate = {
-            studentId: String(fd.get("studentId")), subject: String(fd.get("subject") || "").trim(), date: String(fd.get("date")), startTime: String(fd.get("startTime")), endTime: String(fd.get("endTime")),
+            studentId: lessonType === "trial" ? "" : String(fd.get("studentId") || ""), subject: String(fd.get("subject") || "").trim(), date: String(fd.get("date")), startTime: String(fd.get("startTime")), endTime: String(fd.get("endTime")),
           };
           const error = $('[data-error="form"]', form); error.textContent = "";
-          if (!candidate.studentId || !candidate.subject || !candidate.date || !candidate.startTime || !candidate.endTime) { error.textContent = "請完成所有必填欄位"; return; }
+          const trialName = String(fd.get("trialName") || "").trim();
+          if ((lessonType === "formal" && !candidate.studentId) || (lessonType === "trial" && !trialName) || !candidate.subject || !candidate.date || !candidate.startTime || !candidate.endTime) { error.textContent = "請完成所有必填欄位"; return; }
           if (timeToMinutes(candidate.endTime) <= timeToMinutes(candidate.startTime)) { error.textContent = "結束時間必須晚於開始時間"; return; }
           const now = new Date().toISOString();
           const base = {
-            id: lesson?.id || uid("lesson"), ...candidate, mode: fd.get("mode"), location: String(fd.get("location") || "").trim(), recurrenceGroupId: lesson?.recurrenceGroupId || null, status: lesson?.status || "scheduled", startedAt: lesson?.startedAt || null, recordId: lesson?.recordId || null, notes: String(fd.get("notes") || "").trim(), createdAt: lesson?.createdAt || now, updatedAt: now,
+            id: lesson?.id || uid("lesson"), ...candidate, lessonType, trial: {
+              name: trialName,
+              fee: Number(fd.get("trialFee") || 0),
+              source: String(fd.get("trialSource") || "").trim(),
+              contact: String(fd.get("trialContact") || "").trim(),
+              result: String(fd.get("trialResult") || "pending"),
+              convertedStudentId: lesson?.trial?.convertedStudentId || null,
+            }, mode: fd.get("mode"), location: String(fd.get("location") || "").trim(), recurrenceGroupId: lesson?.recurrenceGroupId || null, status: lesson?.status || "scheduled", startedAt: lesson?.startedAt || null, recordId: lesson?.recordId || null, notes: String(fd.get("notes") || "").trim(), isDemoData: Boolean(lesson?.isDemoData), createdAt: lesson?.createdAt || now, updatedAt: now,
           };
           if (editing) {
             if (hasScheduleConflict(base, lesson.id)) { error.textContent = "此時段與其他課程重疊，請調整時間"; return; }
@@ -2280,7 +2769,7 @@ textarea { min-height: 96px; resize: vertical; }
             return;
           }
 
-          const repeatType = fd.get("repeatType");
+          const repeatType = lessonType === "trial" ? "once" : fd.get("repeatType");
           if (repeatType === "weekly") {
             const weekdays = fd.getAll("repeatWeekday").map(Number);
             const targetCount = Number(fd.get("repeatCount"));
@@ -2320,7 +2809,18 @@ textarea { min-height: 96px; resize: vertical; }
               ui.studentDetailId = null;
               ui.selectedDate = created[0].date;
               render();
-              toast(currentRepeatPlan.skipped.length ? `已跳過 ${currentRepeatPlan.skipped.length} 個衝突時段並建立 ${created.length} 堂` : `已建立 ${created.length} 堂固定課程`);
+              const groupId = created[0].recurrenceGroupId;
+              toast(
+                currentRepeatPlan.skipped.length ? `已跳過 ${currentRepeatPlan.skipped.length} 個衝突時段並建立 ${created.length} 堂` : `已建立 ${created.length} 堂固定課程`,
+                "success",
+                {
+                  duration: 8000,
+                  actions: [
+                    { label: "查看課表", handler: () => { ui.tab = "schedule"; ui.selectedDate = created[0].date; render(); } },
+                    { label: "復原本次排課", handler: () => undoRecurrenceGroup(groupId) },
+                  ],
+                },
+              );
             } catch (err) {
               state.lessons = previousLessons;
               isSubmitting = false;
@@ -2339,33 +2839,14 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function completeLesson(lesson, status, deductLesson, note) {
-    const student = studentById(lesson.studentId);
-    if (!student) throw new Error("找不到學生資料");
-    const existing = recordByLessonId(lesson.id);
-    const previousDeduct = existing?.deductLesson ? 1 : 0;
-    const nextDeduct = deductLesson ? 1 : 0;
-    const delta = nextDeduct - previousDeduct;
-    if (student.billingType === "package" && delta > 0 && calculateRemainingLessons(student) <= 0) {
-      throw new Error("此學生已沒有剩餘堂數，請先調整堂數或關閉扣堂");
-    }
-    student.usedLessons = Math.max(0, student.usedLessons + delta);
-    student.updatedAt = new Date().toISOString();
-    const now = new Date().toISOString();
-    let record;
-    if (existing) {
-      existing.status = status;
-      existing.deductLesson = deductLesson;
-      existing.note = note;
-      existing.updatedAt = now;
-      record = existing;
-    } else {
-      record = { id: uid("record"), lessonId: lesson.id, studentId: lesson.studentId, status, deductLesson, note, recordedAt: now, updatedAt: now };
-      state.lessonRecords.push(record);
-    }
-    lesson.status = status;
-    lesson.recordId = record.id;
-    lesson.updatedAt = now;
-    lesson.notes = note || lesson.notes;
+    Domain.completeLessonTransaction(state, {
+      lessonId: lesson.id,
+      status,
+      deductLesson,
+      note,
+      idFactory: uid,
+      now: new Date().toISOString(),
+    });
     saveData();
   }
 
@@ -2375,14 +2856,14 @@ textarea { min-height: 96px; resize: vertical; }
     openSheet(existing ? "修改上課紀錄" : "完成課程", `
       <form id="record-form" class="form-grid">
         <div class="field"><label>課程結果</label><div class="status-options">${["completed","studentLeave","teacherLeave","absent","cancelled","rescheduled"].map(status => `<label class="status-option"><input type="radio" name="status" value="${status}" ${initialStatus === status ? "checked" : ""}><span>${STATUS_LABELS[status]}</span></label>`).join("")}</div></div>
-        <div class="toggle-row"><div><strong>扣除一堂</strong><div class="lesson-meta">可依你的請假規則調整</div></div><label class="toggle"><input id="deduct-toggle" name="deductLesson" type="checkbox" ${existing ? (existing.deductLesson ? "checked" : "") : (DEFAULT_DEDUCT[initialStatus] ? "checked" : "")}><span class="slider"></span></label></div>
+        <div class="toggle-row"><div><strong>扣除一堂</strong><div class="lesson-meta">${lesson.lessonType === "trial" ? "試教預設不扣正式堂數" : "可依你的請假規則調整"}</div></div><label class="toggle"><input id="deduct-toggle" name="deductLesson" type="checkbox" ${lesson.lessonType === "trial" ? "disabled" : (existing ? (existing.deductLesson ? "checked" : "") : (DEFAULT_DEDUCT[initialStatus] ? "checked" : ""))}><span class="slider"></span></label></div>
         <div class="field"><label for="record-note">課堂備註</label><textarea id="record-note" name="note" placeholder="今天完成了什麼、下次要注意什麼…">${escapeHtml(existing?.note || lesson.notes || "")}</textarea></div>
         <div class="form-error" data-error="form"></div>
         <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">儲存紀錄</button></div>
       </form>`, root => {
         const form = $("#record-form", root);
         const toggle = $("#deduct-toggle", root);
-        $$('input[name="status"]', root).forEach(radio => radio.addEventListener("change", () => { toggle.checked = DEFAULT_DEDUCT[radio.value]; }));
+        $$('input[name="status"]', root).forEach(radio => radio.addEventListener("change", () => { toggle.checked = lesson.lessonType === "trial" ? false : DEFAULT_DEDUCT[radio.value]; }));
         form.addEventListener("submit", e => {
           e.preventDefault();
           const fd = new FormData(form);
@@ -2443,8 +2924,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function escapeCsvCell(value) {
-    const text = value == null ? "" : String(value);
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    return Domain.sanitizeCsvCell(value);
   }
 
   function downloadCsvFile(rows, filename) {
@@ -2455,12 +2935,15 @@ textarea { min-height: 96px; resize: vertical; }
   function exportJsonBackup() {
     try {
       const payload = {
+        dataVersion: DATA_VERSION,
         version: APP_VERSION,
         exportedAt: new Date().toISOString(),
         teacherProfile: normalizeTeacherProfile(state.teacherProfile),
         students: state.students,
         lessons: state.lessons,
         lessonRecords: state.lessonRecords,
+        lessonCreditTransactions: state.lessonCreditTransactions,
+        settings: state.settings,
       };
       downloadJsonFile(payload, `小課表完整備份_${exportTimestamp()}.json`);
       toast("完整 JSON 備份已下載");
@@ -2478,7 +2961,9 @@ textarea { min-height: 96px; resize: vertical; }
         return dateOrder || a.startTime.localeCompare(b.startTime);
       });
       const rows = sortedLessons.map(lesson => {
-        const student = studentById(lesson.studentId) || { name: "已刪除學生", pricePerLesson: "" };
+        const student = lesson.lessonType === "trial"
+          ? { name: `${lesson.trial?.name || "未命名"}（試教）`, pricePerLesson: lesson.trial?.fee || "" }
+          : (studentById(lesson.studentId) || { name: "已刪除學生", pricePerLesson: "" });
         const record = recordByLessonId(lesson.id);
         return [
           lesson.date,
@@ -2503,11 +2988,114 @@ textarea { min-height: 96px; resize: vertical; }
     }
   }
 
+  function clearDemoData() {
+    Domain.removeDemoData(state);
+    state.settings.hasCompletedOnboarding = true;
+    state.settings.onboardingVersion = Domain.ONBOARDING_VERSION;
+    saveData();
+    closeSheet();
+    ui = createUIState();
+    ui.tab = "students";
+    render();
+    toast("已只清除示範資料；你自行建立的資料均已保留", "success", {
+      duration: 8000,
+      actions: [{ label: "新增第一位學生", handler: () => studentForm() }],
+    });
+  }
+
+  function completeOnboarding() {
+    state.settings.hasCompletedOnboarding = true;
+    state.settings.onboardingVersion = Domain.ONBOARDING_VERSION;
+    saveData();
+    closeSheet();
+    render();
+    toast("首次介紹已完成");
+  }
+
+  function onboardingProgress(step) {
+    return `<div class="onboarding-progress" aria-label="第 ${step} 步，共 4 步">${[1,2,3,4].map(index => `<span class="${index <= step ? "active" : ""}"></span>`).join("")}</div>`;
+  }
+
+  function showOnboarding(step = 1, choice = "keep") {
+    const title = `首次介紹 ${step}/4`;
+    if (step === 1) {
+      openSheet(title, `${onboardingProgress(1)}<div class="onboarding-copy"><div class="empty-icon">🗓️</div><h3>歡迎使用小課表</h3><p>快速排課、記錄堂數，並在週視圖與月視圖查看完整行程。</p></div><button class="btn btn-primary btn-full" id="onboarding-next">下一步</button>`, root => {
+        $("#onboarding-next", root).addEventListener("click", () => showOnboarding(2));
+      });
+    } else if (step === 2) {
+      openSheet(title, `${onboardingProgress(2)}<div class="onboarding-copy"><h3>三項核心功能</h3><div class="onboarding-feature-list"><div>📆 固定排課：跨月份與年份自動安排</div><div>➖ 自動扣堂：每筆異動都有紀錄</div><div>🔔 最後一堂提醒：只檢查今天有課的學生</div></div></div><button class="btn btn-primary btn-full" id="onboarding-next">下一步</button>`, root => {
+        $("#onboarding-next", root).addEventListener("click", () => showOnboarding(3));
+      });
+    } else if (step === 3) {
+      openSheet(title, `${onboardingProgress(3)}<div class="onboarding-copy"><h3>先用示範資料熟悉操作</h3><p>示範學生、課程與紀錄都有獨立標記。你可以保留體驗，也可以只清除示範資料；不會動到手機其他檔案或你自行建立的資料。</p></div><div class="form-grid"><button class="btn btn-soft btn-full" id="onboarding-keep">先使用示範資料看看</button><button class="btn btn-primary btn-full" id="onboarding-clear">清除示範資料並開始</button></div>`, root => {
+        $("#onboarding-keep", root).addEventListener("click", () => showOnboarding(4, "keep"));
+        $("#onboarding-clear", root).addEventListener("click", () => showOnboarding(4, "clear"));
+      });
+    } else {
+      const clearing = choice === "clear";
+      openSheet(title, `${onboardingProgress(4)}<div class="onboarding-copy"><h3>${clearing ? "確認只清除示範資料" : "準備完成"}</h3><p>${clearing ? "只會刪除 isDemoData: true 的示範學生、課程與紀錄；自行建立的資料會保留。" : "示範資料會繼續保留，之後可到「更多 → 清除示範資料」安全移除。"}</p></div><button class="btn ${clearing ? "btn-danger" : "btn-primary"} btn-full" id="onboarding-finish">${clearing ? "確認清除並開始" : "保留示範資料並開始"}</button>`, root => {
+        $("#onboarding-finish", root).addEventListener("click", () => clearing ? clearDemoData() : completeOnboarding());
+      });
+    }
+  }
+
+  function exportRecoveryBackup() {
+    try {
+      const raw = localStorage.getItem(`${STORAGE_KEY}_recovery`);
+      if (!raw) throw new Error("目前沒有原始復原備份");
+      downloadBlobFile([raw], "application/json;charset=utf-8", `小課表原始復原備份_${exportTimestamp()}.json`);
+      toast("原始復原備份已下載");
+    } catch (error) {
+      toast(error.message || "無法下載復原備份", "error");
+    }
+  }
+
   function clearAllData() {
-    if (!confirm("確定要清除全部資料嗎？此操作無法復原。")) return;
-    if (!confirm("最後確認：學生、課程與紀錄都會被刪除。")) return;
-    state = { teacherProfile: defaultTeacherProfile(), students: [], lessons: [], lessonRecords: [], version: APP_VERSION };
-    saveData(); ui = createUIState(); render(); toast("資料已清除");
+    openSheet("清除全部資料", `
+      <form id="clear-all-form" class="form-grid">
+        <div class="warning"><strong>建議先下載完整 JSON 備份。</strong><br>這會清除小課表內的老師資訊、學生、課程、堂數異動與設定，但不會刪除手機其他檔案。</div>
+        <button class="btn btn-soft btn-full" type="button" data-action="export-json">先下載完整 JSON 備份</button>
+        <div class="field"><label for="clear-confirmation">請輸入「確認清除」</label><input id="clear-confirmation" autocomplete="off" placeholder="確認清除"></div>
+        <div class="sheet-footer"><button id="clear-all-submit" class="btn btn-danger btn-full" type="submit" disabled>永久清除小課表資料</button></div>
+      </form>`, root => {
+        const form = $("#clear-all-form", root);
+        const input = $("#clear-confirmation", root);
+        const button = $("#clear-all-submit", root);
+        input.addEventListener("input", () => { button.disabled = input.value !== "確認清除"; });
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (input.value !== "確認清除" || button.disabled) return;
+          button.disabled = true;
+          invalidStoredData = null;
+          try {
+            const keysToRemove = [];
+            for (let index = 0; index < localStorage.length; index += 1) {
+              const key = localStorage.key(index);
+              if (key === `${STORAGE_KEY}_recovery` || key?.startsWith(`${STORAGE_KEY}_migration_backup_`)) keysToRemove.push(key);
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            localStorage.removeItem(CALENDAR_VIEW_KEY);
+            state = Domain.normalizeData({
+              teacherProfile: defaultTeacherProfile(),
+              students: [],
+              lessons: [],
+              lessonRecords: [],
+              lessonCreditTransactions: [],
+              settings: { ...Domain.defaultSettings(true), hasCompletedOnboarding: true, onboardingVersion: Domain.ONBOARDING_VERSION },
+              dataVersion: DATA_VERSION,
+              version: APP_VERSION,
+            }, { existingUser: true });
+            saveData();
+            closeSheet();
+            ui = createUIState();
+            render();
+            toast("小課表內的資料已全部清除");
+          } catch (error) {
+            button.disabled = false;
+            toast(error.message || "清除資料失敗", "error");
+          }
+        });
+      });
   }
 
   function resetDemo() {
@@ -2536,8 +3124,16 @@ textarea { min-height: 96px; resize: vertical; }
     if (action === "notify") toast("通知功能會在後續版本加入");
     else if (action === "add-student") studentForm();
     else if (action === "edit-student") studentForm(studentById(id));
+    else if (action === "add-credit") creditSheet(studentById(id));
     else if (action === "edit-teacher") teacherProfileForm();
+    else if (action === "show-guide") showOnboarding(2);
+    else if (action === "restart-onboarding") showOnboarding(1);
+    else if (action === "clear-demo") showOnboarding(4, "clear");
     else if (action === "install-app") installApp();
+    else if (action === "check-update") callAndroidUpdater("checkForUpdates");
+    else if (action === "download-update") { closeSheet(); callAndroidUpdater("downloadAndInstall"); }
+    else if (action === "continue-update") callAndroidUpdater("continueInstall");
+    else if (action === "dismiss-update") closeSheet();
     else if (action === "add-lesson") lessonForm(null, actionEl.dataset.studentId || null);
     else if (action === "add-calendar-lesson") {
       const date = actionEl.dataset.calendarDate || ui.selectedDate;
@@ -2545,6 +3141,8 @@ textarea { min-height: 96px; resize: vertical; }
       lessonForm(null, null, null, { date, startTime: actionEl.dataset.startTime || null });
     }
     else if (action === "course-detail") courseDetailSheet(lessonById(id));
+    else if (action === "delete-lesson") deleteLessonSheet(lessonById(id));
+    else if (action === "convert-trial") convertTrialSheet(lessonById(id));
     else if (action === "edit-lesson") lessonForm(lessonById(id));
     else if (action === "copy-lesson") { const source = lessonById(id); if (source) lessonForm(null, source.studentId, source); }
     else if (action === "start-lesson") { closeSheet(); startLesson(id); }
@@ -2560,6 +3158,7 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "close-sheet") closeSheet();
     else if (action === "export-json" || action === "export-data") exportJsonBackup();
     else if (action === "export-csv") exportLessonCsv();
+    else if (action === "export-recovery") exportRecoveryBackup();
     else if (action === "import-data") $("#import-file")?.click();
     else if (action === "clear-data") clearAllData();
     else if (action === "reset-demo") resetDemo();
@@ -2576,14 +3175,31 @@ textarea { min-height: 96px; resize: vertical; }
   });
 
   document.addEventListener("change", e => {
+    if (e.target.id === "android-auto-check") {
+      state.settings.update.autoCheck = e.target.checked;
+      saveData();
+      callAndroidUpdater("setAutoCheck", e.target.checked);
+      return;
+    }
+    if (e.target.id === "android-wifi-only") {
+      state.settings.update.wifiOnly = e.target.checked;
+      saveData();
+      callAndroidUpdater("setWifiOnly", e.target.checked);
+      return;
+    }
     if (e.target.id === "import-file") {
       const file = e.target.files?.[0];
       if (!file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        toast("匯入失敗：檔案不可超過 5 MB", "error");
+        e.target.value = "";
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         try {
           const parsed = JSON.parse(reader.result);
-          const normalized = normalizeStoredData(parsed);
+          const normalized = normalizeStoredData(parsed, { existingUser: true });
           if (!validateImportedData(normalized)) throw new Error("資料格式不正確");
           state = normalized;
           saveData(); ui = createUIState(); render(); toast("資料匯入成功");
@@ -2619,6 +3235,9 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   render();
+  if (!state.settings?.hasCompletedOnboarding || Number(state.settings?.onboardingVersion || 0) < Domain.ONBOARDING_VERSION) {
+    setTimeout(() => showOnboarding(1), 120);
+  }
 })();
 
 </script>

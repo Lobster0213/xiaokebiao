@@ -5,10 +5,7 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: pages
@@ -16,6 +13,8 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,7 +23,7 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir _site
-          cp index.html manifest.webmanifest service-worker.js app-icon.svg _site/
+          cp index.html app-domain.js manifest.webmanifest service-worker.js app-icon.svg _site/
           cp -R icons _site/icons
           touch _site/.nojekyll
 
@@ -37,6 +36,9 @@ jobs:
           path: _site
 
   deploy:
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
