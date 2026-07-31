@@ -9,7 +9,7 @@
 - 資料：保留原本 `localStorage` key `xiaokebiao_mvp_v1`
 - 集中資料版本：`dataVersion: 7`
 - 部署：推送 `main` 後由 GitHub Actions 更新 GitHub Pages
-- Android Release：推送 `v*` tag 後建置簽章 APK，並上傳至正式 GitHub Release
+- Android Release：推送 `v*` tag 後建置簽章 APK；含 `-rc` 等後綴的 tag 發布為 Prerelease，正式 tag 發布為 Latest Release
 
 Web 版不需要 npm 才能使用；直接開啟 `index.html` 即可。本機檔案模式不支援 Service Worker，PWA 安裝與離線快取需使用 GitHub Pages HTTPS 網址。
 
@@ -90,6 +90,8 @@ Repository secrets：
 - `ANDROID_KEY_PASSWORD`
 
 `ANDROID_KEYSTORE_BASE64` 是 release keystore 的 Base64 內容。請另外離線備份原始 keystore 與密碼；遺失後將無法用相同簽章覆蓋更新既有 App。
+
+每一個可能安裝到手機的 APK 都必須使用新的、更高 `XIAOKEBIAO_VERSION_CODE`。公開測試版 `v0.7.0-rc.1` 使用 `7000`，正式 `v0.7.0` 使用 `7001`；之後發布前需先在 `android/gradle.properties` 遞增此值。
 
 建立並推送版本 tag：
 

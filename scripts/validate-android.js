@@ -18,6 +18,7 @@ const java = fs.readFileSync(path.join(root, required[3]), "utf8");
 const manifest = fs.readFileSync(path.join(root, required[2]), "utf8");
 const workflow = fs.readFileSync(path.join(root, required[4]), "utf8");
 const gradle = fs.readFileSync(path.join(root, required[1]), "utf8");
+const gradleProperties = fs.readFileSync(path.join(root, "android/gradle.properties"), "utf8");
 
 const checks = [
   [java.includes("/releases/latest"), "latest stable GitHub Release endpoint"],
@@ -38,6 +39,8 @@ const checks = [
   [gradle.includes('permanentApplicationId = "io.github.lobster0213.xiaokebiao"'), "confirmed permanent applicationId"],
   [workflow.includes("ANDROID_KEYSTORE_BASE64"), "release signing secrets"],
   [workflow.includes("xiaokebiao-v${VERSION_NAME}-release.apk"), "release-only APK name"],
+  [workflow.includes("--prerelease"), "prerelease tag handling"],
+  [gradleProperties.includes("XIAOKEBIAO_VERSION_CODE=7001"), "stable versionCode newer than installed RC"],
 ];
 
 for (const [passed, label] of checks) {

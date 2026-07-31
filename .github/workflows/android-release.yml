@@ -62,10 +62,10 @@ jobs:
         run: |
           VERSION_NAME="${GITHUB_REF_NAME#v}"
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then VERSION_NAME="0.7.0"; fi
-          IFS=. read -r MAJOR MINOR PATCH <<EOF
-          $VERSION_NAME
-          EOF
-          VERSION_CODE=$((10#$MAJOR * 1000000 + 10#$MINOR * 1000 + 10#${PATCH%%-*}))
+          VERSION_CODE="$(sed -n 's/^XIAOKEBIAO_VERSION_CODE=//p' android/gradle.properties | tail -n 1)"
+          case "$VERSION_CODE" in
+            ''|*[!0-9]*) echo "Invalid XIAOKEBIAO_VERSION_CODE in android/gradle.properties" >&2; exit 1 ;;
+          esac
           gradle -p android :app:assembleRelease \
             -PXIAOKEBIAO_APPLICATION_ID="$ANDROID_APPLICATION_ID" \
             -PXIAOKEBIAO_VERSION_NAME="$VERSION_NAME" \
@@ -81,13 +81,15 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      - name: Publish stable GitHub Release
+      - name: Publish or update GitHub Release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          elif [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --prerelease
           else
             gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --latest
           fi
