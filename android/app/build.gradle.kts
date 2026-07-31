@@ -4,10 +4,11 @@ plugins {
     id("com.android.application")
 }
 
-val configuredApplicationId = providers.gradleProperty("XIAOKEBIAO_APPLICATION_ID")
-if (!configuredApplicationId.isPresent || configuredApplicationId.get().isBlank()) {
+val permanentApplicationId = "io.github.lobster0213.xiaokebiao"
+val configuredApplicationId = providers.gradleProperty("XIAOKEBIAO_APPLICATION_ID").orElse(permanentApplicationId)
+if (configuredApplicationId.get() != permanentApplicationId) {
     throw GradleException(
-        "缺少 XIAOKEBIAO_APPLICATION_ID。這是永久 Android 身分，請由專案擁有者確認後以 -PXIAOKEBIAO_APPLICATION_ID=... 提供。"
+        "XIAOKEBIAO_APPLICATION_ID 必須保持為永久身分 $permanentApplicationId，避免覆蓋更新與資料失效。"
     )
 }
 

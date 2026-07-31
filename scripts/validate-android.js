@@ -35,6 +35,7 @@ const checks = [
   [manifest.includes("REQUEST_INSTALL_PACKAGES"), "package install permission"],
   [manifest.includes('android:allowBackup="true"'), "Android app data preservation"],
   [gradle.includes("XIAOKEBIAO_APPLICATION_ID"), "explicit applicationId configuration"],
+  [gradle.includes('permanentApplicationId = "io.github.lobster0213.xiaokebiao"'), "confirmed permanent applicationId"],
   [workflow.includes("ANDROID_KEYSTORE_BASE64"), "release signing secrets"],
   [workflow.includes("xiaokebiao-v${VERSION_NAME}-release.apk"), "release-only APK name"],
 ];

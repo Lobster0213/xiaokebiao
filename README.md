@@ -47,16 +47,19 @@ npm run test:android:static
 
 ## Android 本機建置
 
-Android 專案不把永久身分或簽章寫死在公開 repository。建置前必須提供：
+正式 Android 身分已由專案擁有者確認並固定為：
 
-- `XIAOKEBIAO_APPLICATION_ID`：正式發布後不可任意變更
-- release keystore 與密碼：只放本機環境變數或 GitHub Secrets，絕不可 commit
+```text
+io.github.lobster0213.xiaokebiao
+```
+
+建置時若提供 `XIAOKEBIAO_APPLICATION_ID`，必須與此永久身分完全一致。Release keystore 與密碼只放本機環境變數或 GitHub Secrets，絕不可 commit。
 
 Debug 驗證範例：
 
 ```bash
 gradle -p android :app:assembleDebug \
-  -PXIAOKEBIAO_APPLICATION_ID=your.confirmed.application.id
+  -PXIAOKEBIAO_APPLICATION_ID=io.github.lobster0213.xiaokebiao
 ```
 
 Release 建置另需環境變數：
