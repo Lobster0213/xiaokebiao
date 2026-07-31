@@ -354,8 +354,10 @@ textarea { min-height: 96px; resize: vertical; }
 .sheet-footer { position: sticky; bottom: -24px; background: white; padding-top: 14px; margin-top: 8px; }
 
 .toast-root { position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 200; width: min(calc(100% - 32px), 440px); pointer-events: none; }
-.toast { background: #172033; color: white; border-radius: 14px; padding: 12px 14px; box-shadow: 0 14px 34px rgba(15, 23, 42, .25); animation: toastIn .2s ease; }
+.toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #172033; color: white; border-radius: 14px; padding: 12px 14px; box-shadow: 0 14px 34px rgba(15, 23, 42, .25); animation: toastIn .2s ease; pointer-events: auto; }
 .toast.error { background: var(--red); }
+.toast-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.toast-action { border: 0; border-radius: 9px; background: rgba(255,255,255,.16); color: white; padding: 7px 9px; font-weight: 800; white-space: nowrap; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 .file-input { display: none; }
@@ -1336,6 +1338,20 @@ textarea { min-height: 96px; resize: vertical; }
     }));
   }
 
+  function undoRecurrenceGroup(groupId) {
+    const targetIds = new Set(state.lessons.filter(lesson => lesson.recurrenceGroupId === groupId).map(lesson => lesson.id));
+    if (!targetIds.size) {
+      toast("這批排課已不存在", "error");
+      return;
+    }
+    state.lessons = state.lessons.filter(lesson => !targetIds.has(lesson.id));
+    state.lessonRecords = state.lessonRecords.filter(record => !targetIds.has(record.lessonId));
+    state.lessonCreditTransactions = state.lessonCreditTransactions.filter(transaction => !targetIds.has(transaction.relatedLessonId));
+    saveData();
+    render();
+    toast(`已復原本次排課，共移除 ${targetIds.size} 堂`);
+  }
+
   function formatConflictMessage(skippedItem) {
     const dateText = formatDate(skippedItem.candidate.date);
     const candidateTime = `${skippedItem.candidate.startTime}–${skippedItem.candidate.endTime}`;
@@ -1364,13 +1380,14 @@ textarea { min-height: 96px; resize: vertical; }
 
   function latestLessonForStudent(studentId, ignoreLessonId = null) {
     return [...state.lessons]
-      .filter(item => item.studentId === studentId && item.id !== ignoreLessonId)
+      .filter(item => !item.deletedAt && item.studentId === studentId && item.id !== ignoreLessonId)
       .sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`))[0] || null;
   }
 
   function studentById(id) { return state.students.find(s => s.id === id); }
   function lessonById(id) { return state.lessons.find(l => l.id === id); }
-  function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id); }
+  function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id && !r.deletedAt); }
+  function activeLessons() { return state.lessons.filter(lesson => !lesson.deletedAt); }
 
   function escapeHtml(value = "") {
     return String(value).replace(/[&<>'"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[ch]));
@@ -1381,11 +1398,18 @@ textarea { min-height: 96px; resize: vertical; }
     return `NT$${Number(value).toLocaleString("zh-TW")}`;
   }
 
-  function toast(message, type = "success") {
+  function toast(message, type = "success", options = {}) {
     const root = $("#toast-root");
-    root.innerHTML = `<div class="toast ${type === "error" ? "error" : ""}">${escapeHtml(message)}</div>`;
+    const actions = Array.isArray(options.actions) ? options.actions : [];
+    root.innerHTML = `<div class="toast ${type === "error" ? "error" : ""}"><span>${escapeHtml(message)}</span>${actions.length ? `<span class="toast-actions">${actions.map((action, index) => `<button class="toast-action" type="button" data-toast-index="${index}">${escapeHtml(action.label)}</button>`).join("")}</span>` : ""}</div>`;
+    $$("[data-toast-index]", root).forEach(button => button.addEventListener("click", () => {
+      const action = actions[Number(button.dataset.toastIndex)];
+      root.innerHTML = "";
+      clearTimeout(toast.timer);
+      action?.handler?.();
+    }));
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => { root.innerHTML = ""; }, 2600);
+    toast.timer = setTimeout(() => { root.innerHTML = ""; }, Number(options.duration) || (actions.length ? 8000 : 2600));
   }
 
   function statusBadge(status) {
@@ -1457,9 +1481,9 @@ textarea { min-height: 96px; resize: vertical; }
 
   function renderHome() {
     const today = todayISO();
-    const lessons = state.lessons.filter(l => l.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const lessons = activeLessons().filter(l => l.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
     const month = today.slice(0, 7);
-    const monthCompleted = state.lessons.filter(l => l.date.startsWith(month) && l.status === "completed").length;
+    const monthCompleted = activeLessons().filter(l => l.date.startsWith(month) && l.status === "completed").length;
     return `
       ${topbar()}
       <section class="hero"><h1>${greeting()}，${escapeHtml(state.teacherProfile?.name || "林老師")} 👋</h1><p>${formatDate(today)}</p></section>
@@ -1535,7 +1559,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function lessonsOn(date) {
-    return state.lessons.filter(lesson => lesson.date === date).sort((a, b) => {
+    return activeLessons().filter(lesson => lesson.date === date).sort((a, b) => {
       const timeOrder = a.startTime.localeCompare(b.startTime);
       return timeOrder || a.endTime.localeCompare(b.endTime);
     });
@@ -1673,7 +1697,7 @@ textarea { min-height: 96px; resize: vertical; }
     const currentMonth = ui.selectedDate.slice(0, 7);
     const today = todayISO();
     const lessonsByDate = new Map();
-    for (const lesson of state.lessons) {
+    for (const lesson of activeLessons()) {
       if (lesson.date >= dates[0] && lesson.date <= dates[dates.length - 1]) {
         if (!lessonsByDate.has(lesson.date)) lessonsByDate.set(lesson.date, []);
         lessonsByDate.get(lesson.date).push(lesson);
@@ -1746,7 +1770,7 @@ textarea { min-height: 96px; resize: vertical; }
       return renderStudents();
     }
     const remaining = calculateRemainingLessons(student);
-    const lessons = state.lessons.filter(l => l.studentId === student.id).sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
+    const lessons = activeLessons().filter(l => l.studentId === student.id).sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
     const records = lessons.map(l => ({ lesson: l, record: recordByLessonId(l.id) })).filter(x => x.record);
     return `
       <div class="page-title-row"><button class="back-btn" data-action="back-students" aria-label="返回學生列表">←</button><h1 style="flex:1;text-align:center">學生資料</h1><span style="width:42px"></span></div>
@@ -2261,7 +2285,18 @@ textarea { min-height: 96px; resize: vertical; }
               ui.studentDetailId = null;
               ui.selectedDate = created[0].date;
               render();
-              toast(currentRepeatPlan.skipped.length ? `已跳過 ${currentRepeatPlan.skipped.length} 個衝突時段並建立 ${created.length} 堂` : `已建立 ${created.length} 堂固定課程`);
+              const groupId = created[0].recurrenceGroupId;
+              toast(
+                currentRepeatPlan.skipped.length ? `已跳過 ${currentRepeatPlan.skipped.length} 個衝突時段並建立 ${created.length} 堂` : `已建立 ${created.length} 堂固定課程`,
+                "success",
+                {
+                  duration: 8000,
+                  actions: [
+                    { label: "查看課表", handler: () => { ui.tab = "schedule"; ui.selectedDate = created[0].date; render(); } },
+                    { label: "復原本次排課", handler: () => undoRecurrenceGroup(groupId) },
+                  ],
+                },
+              );
             } catch (err) {
               state.lessons = previousLessons;
               isSubmitting = false;
