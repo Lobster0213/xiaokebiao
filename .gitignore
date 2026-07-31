@@ -6,5 +6,6 @@ CODEX_*.md
 PASTE_TO_CODEX.txt
 pwa-mobile-*.png
 .tools/
+node_modules/
 .DS_Store
 Thumbs.db

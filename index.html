@@ -1022,13 +1022,17 @@ textarea { min-height: 96px; resize: vertical; }
   <div id="app" class="app-shell" aria-live="polite"></div>
   <div id="overlay-root"></div>
   <div id="toast-root" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
+  <script src="./app-domain.js"></script>
   <script>
 (() => {
   "use strict";
 
+  const Domain = window.XiaoKeBiaoDomain;
+  if (!Domain) throw new Error("小課表資料模組載入失敗");
   const STORAGE_KEY = "xiaokebiao_mvp_v1";
   const CALENDAR_VIEW_KEY = "xiaokebiao_calendar_view_v1";
-  const APP_VERSION = "0.6.0";
+  const APP_VERSION = "0.7.0";
+  const DATA_VERSION = Domain.DATA_VERSION;
   const WEEK_START_HOUR = 8;
   const WEEK_END_HOUR = 23;
   const WEEK_HOUR_HEIGHT = 64;
@@ -1177,83 +1181,56 @@ textarea { min-height: 96px; resize: vertical; }
     const now = new Date().toISOString();
     const today = todayISO();
     const students = [
-      { id: "stu_wang", name: "王小明", subject: "數學", phone: "0912-345-678", contactNote: "以 LINE 聯絡家長", billingType: "package", totalLessons: 10, usedLessons: 4, pricePerLesson: 800, defaultDuration: 60, notes: "國二，複習進度需放慢", createdAt: now, updatedAt: now },
-      { id: "stu_chen", name: "陳小安", subject: "英文", phone: "", contactNote: "週末前確認教材", billingType: "package", totalLessons: 20, usedLessons: 18, pricePerLesson: 700, defaultDuration: 60, notes: "準備英檢初級", createdAt: now, updatedAt: now },
-      { id: "stu_li", name: "李雨晴", subject: "鋼琴", phone: "0988-222-123", contactNote: "可傳訊息給本人", billingType: "perLesson", totalLessons: null, usedLessons: 0, pricePerLesson: 1000, defaultDuration: 60, notes: "成人初學", createdAt: now, updatedAt: now },
-      { id: "stu_zhang", name: "張子維", subject: "國文", phone: "", contactNote: "", billingType: "package", totalLessons: 8, usedLessons: 2, pricePerLesson: 750, defaultDuration: 60, notes: "作文為主", createdAt: now, updatedAt: now },
+      { id: "stu_wang", name: "王小明", subject: "數學", phone: "0912-345-678", contactNote: "以 LINE 聯絡家長", billingType: "package", totalLessons: 10, usedLessons: 4, pricePerLesson: 800, defaultDuration: 60, notes: "國二，複習進度需放慢", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "stu_chen", name: "陳小安", subject: "英文", phone: "", contactNote: "週末前確認教材", billingType: "package", totalLessons: 20, usedLessons: 18, pricePerLesson: 700, defaultDuration: 60, notes: "準備英檢初級", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "stu_li", name: "李雨晴", subject: "鋼琴", phone: "0988-222-123", contactNote: "可傳訊息給本人", billingType: "perLesson", totalLessons: null, usedLessons: 0, pricePerLesson: 1000, defaultDuration: 60, notes: "成人初學", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "stu_zhang", name: "張子維", subject: "國文", phone: "", contactNote: "", billingType: "package", totalLessons: 8, usedLessons: 2, pricePerLesson: 750, defaultDuration: 60, notes: "作文為主", isDemoData: true, createdAt: now, updatedAt: now },
     ];
 
     const completedLessonId = "lesson_demo_completed";
     const recordId = "record_demo_completed";
     const lessons = [
-      { id: "lesson_demo_1", studentId: "stu_wang", subject: "數學", date: today, startTime: "09:30", endTime: "10:30", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "二次函數", createdAt: now, updatedAt: now },
-      { id: "lesson_demo_2", studentId: "stu_chen", subject: "英文", date: today, startTime: "13:00", endTime: "14:00", mode: "online", location: "Google Meet", recurrenceGroupId: null, status: "inProgress", startedAt: now, recordId: null, notes: "閱讀理解", createdAt: now, updatedAt: now },
-      { id: completedLessonId, studentId: "stu_li", subject: "鋼琴", date: today, startTime: "16:30", endTime: "17:30", mode: "inPerson", location: "琴房", recurrenceGroupId: null, status: "completed", startedAt: now, recordId, notes: "音階與節奏", createdAt: now, updatedAt: now },
-      { id: "lesson_demo_4", studentId: "stu_zhang", subject: "國文", date: addDays(today, 1), startTime: "10:00", endTime: "11:00", mode: "online", location: "Zoom", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "作文架構", createdAt: now, updatedAt: now },
-      { id: "lesson_demo_5", studentId: "stu_wang", subject: "數學", date: addDays(today, 3), startTime: "14:00", endTime: "15:00", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "", createdAt: now, updatedAt: now },
+      { id: "lesson_demo_1", studentId: "stu_wang", subject: "數學", date: today, startTime: "09:30", endTime: "10:30", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "二次函數", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "lesson_demo_2", studentId: "stu_chen", subject: "英文", date: today, startTime: "13:00", endTime: "14:00", mode: "online", location: "Google Meet", recurrenceGroupId: null, status: "inProgress", startedAt: now, recordId: null, notes: "閱讀理解", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: completedLessonId, studentId: "stu_li", subject: "鋼琴", date: today, startTime: "16:30", endTime: "17:30", mode: "inPerson", location: "琴房", recurrenceGroupId: null, status: "completed", startedAt: now, recordId, notes: "音階與節奏", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "lesson_demo_4", studentId: "stu_zhang", subject: "國文", date: addDays(today, 1), startTime: "10:00", endTime: "11:00", mode: "online", location: "Zoom", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "作文架構", isDemoData: true, createdAt: now, updatedAt: now },
+      { id: "lesson_demo_5", studentId: "stu_wang", subject: "數學", date: addDays(today, 3), startTime: "14:00", endTime: "15:00", mode: "inPerson", location: "學生家", recurrenceGroupId: null, status: "scheduled", startedAt: null, recordId: null, notes: "", isDemoData: true, createdAt: now, updatedAt: now },
     ];
 
     const lessonRecords = [
-      { id: recordId, lessonId: completedLessonId, studentId: "stu_li", status: "completed", deductLesson: false, note: "今天節奏感進步，回家練 C 大調。", recordedAt: now, updatedAt: now },
+      { id: recordId, lessonId: completedLessonId, studentId: "stu_li", status: "completed", deductLesson: false, note: "今天節奏感進步，回家練 C 大調。", isDemoData: true, recordedAt: now, updatedAt: now },
     ];
 
-    return { teacherProfile: defaultTeacherProfile(), students, lessons, lessonRecords, version: APP_VERSION };
+    return Domain.normalizeData({
+      teacherProfile: defaultTeacherProfile(),
+      students,
+      lessons,
+      lessonRecords,
+      lessonCreditTransactions: [],
+      settings: { ...Domain.defaultSettings(false), hasCompletedOnboarding: false, onboardingVersion: 0 },
+      dataVersion: DATA_VERSION,
+      version: APP_VERSION,
+    }, { existingUser: false, now });
   }
 
   function validateImportedData(data) {
-    if (!data || typeof data !== "object") return false;
-    if (!Array.isArray(data.students) || !Array.isArray(data.lessons) || !Array.isArray(data.lessonRecords)) return false;
-    const studentOk = data.students.every(s => s && typeof s.id === "string" && typeof s.name === "string" && typeof s.subject === "string" && ["package", "perLesson"].includes(s.billingType));
-    const lessonOk = data.lessons.every(l => l && typeof l.id === "string" && typeof l.studentId === "string" && typeof l.date === "string" && typeof l.startTime === "string" && typeof l.endTime === "string" && STATUS_LABELS[l.status]);
-    const recordOk = data.lessonRecords.every(r => r && typeof r.id === "string" && typeof r.lessonId === "string" && typeof r.studentId === "string" && typeof r.deductLesson === "boolean");
-    const teacherOk = data.teacherProfile && typeof data.teacherProfile.name === "string" && Array.isArray(data.teacherProfile.subjects);
-    return studentOk && lessonOk && recordOk && teacherOk;
+    return Boolean(
+      data
+      && data.dataVersion === DATA_VERSION
+      && data.teacherProfile
+      && data.settings
+      && Array.isArray(data.students)
+      && Array.isArray(data.lessons)
+      && Array.isArray(data.lessonRecords)
+      && Array.isArray(data.lessonCreditTransactions)
+    );
   }
 
-  function normalizeStoredData(data) {
-    if (!data || typeof data !== "object" || !Array.isArray(data.students) || !Array.isArray(data.lessons)) return null;
-    const students = data.students.map(student => {
-      if (!student || typeof student !== "object") return student;
-      const billingType = student.billingType === "perLesson" ? "perLesson" : "package";
-      const usedLessons = Number.isFinite(Number(student.usedLessons)) ? Math.max(0, Number(student.usedLessons)) : 0;
-      const defaultDuration = Number.isFinite(Number(student.defaultDuration)) ? Number(student.defaultDuration) : 60;
-      return {
-        ...student,
-        name: String(student.name || ""),
-        subject: String(student.subject || ""),
-        billingType,
-        totalLessons: billingType === "perLesson" ? null : (student.totalLessons ?? null),
-        usedLessons,
-        defaultDuration,
-      };
+  function normalizeStoredData(data, options = {}) {
+    return Domain.normalizeData(data, {
+      existingUser: options.existingUser !== false,
+      now: options.now || new Date().toISOString(),
     });
-    const studentMap = new Map(students.filter(Boolean).map(student => [student.id, student]));
-    const lessons = data.lessons.map(lesson => {
-      if (!lesson || typeof lesson !== "object") return lesson;
-      const student = studentMap.get(lesson.studentId);
-      return {
-        ...lesson,
-        subject: String(lesson.subject || student?.subject || ""),
-        status: STATUS_LABELS[lesson.status] ? lesson.status : "scheduled",
-        recurrenceGroupId: lesson.recurrenceGroupId || null,
-        startedAt: lesson.startedAt || null,
-        recordId: lesson.recordId || null,
-        notes: String(lesson.notes || ""),
-        location: String(lesson.location || ""),
-        mode: lesson.mode === "online" ? "online" : "inPerson",
-      };
-    });
-    const lessonRecords = (Array.isArray(data.lessonRecords) ? data.lessonRecords : []).map(record => {
-      if (!record || typeof record !== "object") return record;
-      const status = STATUS_LABELS[record.status] ? record.status : "completed";
-      return {
-        ...record,
-        status,
-        deductLesson: typeof record.deductLesson === "boolean" ? record.deductLesson : Boolean(DEFAULT_DEDUCT[status]),
-        note: String(record.note || ""),
-      };
-    });
-    return { ...data, teacherProfile: normalizeTeacherProfile(data.teacherProfile), students, lessons, lessonRecords, version: APP_VERSION };
   }
 
   function loadData() {
@@ -1266,13 +1243,18 @@ textarea { min-height: 96px; resize: vertical; }
         return demo;
       }
       const parsed = JSON.parse(raw);
-      const normalized = normalizeStoredData(parsed);
-      if (validateImportedData(normalized)) return normalized;
-      invalidStoredData = raw;
-      console.warn("本機資料格式不完整，已保留原始內容並使用安全示範資料");
+      const sourceVersion = Number(parsed.dataVersion || 0);
+      const normalized = normalizeStoredData(parsed, { existingUser: true });
+      if (!validateImportedData(normalized)) throw new Error("資料遷移後格式不正確");
+      if (sourceVersion < DATA_VERSION) {
+        const snapshotKey = `${STORAGE_KEY}_migration_backup_v${sourceVersion}`;
+        if (!localStorage.getItem(snapshotKey)) localStorage.setItem(snapshotKey, raw);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+      }
+      return normalized;
     } catch (err) {
       invalidStoredData = raw;
-      console.warn("讀取本機資料失敗", err);
+      console.warn("讀取或遷移本機資料失敗；原始內容未被覆寫", err);
     }
     return createDemoData();
   }
@@ -1281,25 +1263,27 @@ textarea { min-height: 96px; resize: vertical; }
     if (invalidStoredData !== null && !localStorage.getItem(`${STORAGE_KEY}_recovery`)) {
       localStorage.setItem(`${STORAGE_KEY}_recovery`, invalidStoredData);
     }
+    state = normalizeStoredData({ ...state, dataVersion: DATA_VERSION, version: APP_VERSION }, { existingUser: true });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     invalidStoredData = null;
   }
 
   function calculateRemainingLessons(student) {
-    if (!student || student.billingType === "perLesson" || student.totalLessons == null) return null;
-    return Math.max(0, student.totalLessons - student.usedLessons);
+    if (!student || student.billingType === "perLesson") return null;
+    if (Array.isArray(state.lessonCreditTransactions)) return Domain.creditBalance(state, student.id);
+    if (student.totalLessons == null) return null;
+    return Math.max(0, Number(student.totalLessons || 0) - Number(student.usedLessons || 0));
   }
 
   function timeToMinutes(time) {
-    const [h, m] = time.split(":").map(Number);
-    return h * 60 + m;
+    return Domain.timeToMinutes(time);
   }
 
   function hasScheduleConflict(candidate, ignoreLessonId = null) {
     const start = timeToMinutes(candidate.startTime);
     const end = timeToMinutes(candidate.endTime);
     return state.lessons.some(l => {
-      if (l.id === ignoreLessonId || l.date !== candidate.date || l.status === "cancelled" || l.status === "rescheduled") return false;
+      if (l.deletedAt || l.id === ignoreLessonId || l.date !== candidate.date || l.status === "cancelled" || l.status === "rescheduled") return false;
       const otherStart = timeToMinutes(l.startTime);
       const otherEnd = timeToMinutes(l.endTime);
       return start < otherEnd && end > otherStart;
@@ -1333,50 +1317,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function generateRecurringLessonPlan(input, existingLessons, options = {}) {
-    const targetCount = Math.max(0, Number(input.targetCount) || 0);
-    const weekdays = [...new Set((input.weekdays || []).map(Number).filter(day => day >= 1 && day <= 7))];
-    const autoSupplement = options.autoSupplement !== false;
-    const maxWeeks = Math.max(1, Number(options.maxWeeks) || 104);
-    const originalDates = [];
-    const accepted = [];
-    const supplemented = [];
-    const skipped = [];
-    if (!input.startDate || !weekdays.length || !targetCount) {
-      return { targetCount, originalDates, accepted, supplemented, skipped, limitReached: false, lastDate: null };
-    }
-    const horizon = addDays(input.startDate, maxWeeks * 7);
-    let cursor = input.startDate;
-    let guard = 0;
-    while (cursor <= horizon && guard <= maxWeeks * 7) {
-      if (weekdays.includes(weekdayNumber(cursor))) {
-        const candidate = { ...input.baseLesson, date: cursor };
-        const isOriginal = originalDates.length < targetCount;
-        if (isOriginal) originalDates.push(candidate);
-        const conflicts = findLessonConflicts([candidate], existingLessons);
-        if (!conflicts.length) {
-          if (isOriginal || (autoSupplement && accepted.length < targetCount)) {
-            accepted.push(candidate);
-            if (!isOriginal) supplemented.push(candidate);
-          }
-        } else if (isOriginal || (autoSupplement && accepted.length < targetCount)) {
-          skipped.push({ candidate, conflicts, isOriginal });
-        }
-        if (!autoSupplement && originalDates.length >= targetCount) break;
-        if (autoSupplement && originalDates.length >= targetCount && accepted.length >= targetCount) break;
-      }
-      cursor = addDays(cursor, 1);
-      guard += 1;
-    }
-    const finalAccepted = autoSupplement ? accepted.slice(0, targetCount) : accepted;
-    return {
-      targetCount,
-      originalDates,
-      accepted: finalAccepted,
-      supplemented: supplemented.filter(candidate => finalAccepted.includes(candidate)),
-      skipped,
-      limitReached: autoSupplement && finalAccepted.length < targetCount,
-      lastDate: finalAccepted.length ? finalAccepted[finalAccepted.length - 1].date : null,
-    };
+    return Domain.planRecurrence(input, existingLessons, options);
   }
 
   function materializeRecurringLessons(baseLesson, candidates) {
@@ -2443,8 +2384,7 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function escapeCsvCell(value) {
-    const text = value == null ? "" : String(value);
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    return Domain.sanitizeCsvCell(value);
   }
 
   function downloadCsvFile(rows, filename) {
@@ -2455,12 +2395,15 @@ textarea { min-height: 96px; resize: vertical; }
   function exportJsonBackup() {
     try {
       const payload = {
+        dataVersion: DATA_VERSION,
         version: APP_VERSION,
         exportedAt: new Date().toISOString(),
         teacherProfile: normalizeTeacherProfile(state.teacherProfile),
         students: state.students,
         lessons: state.lessons,
         lessonRecords: state.lessonRecords,
+        lessonCreditTransactions: state.lessonCreditTransactions,
+        settings: state.settings,
       };
       downloadJsonFile(payload, `小課表完整備份_${exportTimestamp()}.json`);
       toast("完整 JSON 備份已下載");
@@ -2579,11 +2522,16 @@ textarea { min-height: 96px; resize: vertical; }
     if (e.target.id === "import-file") {
       const file = e.target.files?.[0];
       if (!file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        toast("匯入失敗：檔案不可超過 5 MB", "error");
+        e.target.value = "";
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         try {
           const parsed = JSON.parse(reader.result);
-          const normalized = normalizeStoredData(parsed);
+          const normalized = normalizeStoredData(parsed, { existingUser: true });
           if (!validateImportedData(normalized)) throw new Error("資料格式不正確");
           state = normalized;
           saveData(); ui = createUIState(); render(); toast("資料匯入成功");

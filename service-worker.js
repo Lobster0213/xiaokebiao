@@ -1,7 +1,8 @@
-const CACHE_NAME = "xiaokebiao-pwa-v1";
+const CACHE_NAME = "xiaokebiao-pwa-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./app-domain.js",
   "./manifest.webmanifest",
   "./app-icon.svg",
   "./icons/icon-180.png",
