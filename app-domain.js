@@ -376,6 +376,184 @@
     return true;
   }
 
+  function syncStudentUsedLessons(data, studentId) {
+    const student = (data.students || []).find(item => item.id === studentId);
+    if (!student) return 0;
+    const activeLessonIds = new Set((data.lessons || [])
+      .filter(lesson => lesson.studentId === studentId && !lesson.deletedAt)
+      .map(lesson => lesson.id));
+    const used = (data.lessonRecords || []).filter(record =>
+      record.studentId === studentId
+      && activeLessonIds.has(record.lessonId)
+      && !record.deletedAt
+      && record.deductLesson
+    ).length;
+    student.usedLessons = used;
+    return used;
+  }
+
+  function requireIdFactory(options) {
+    if (typeof options.idFactory !== "function") throw new Error("缺少安全 ID 產生器");
+    return options.idFactory;
+  }
+
+  function completeLessonTransaction(data, options) {
+    const lesson = (data.lessons || []).find(item => item.id === options.lessonId && !item.deletedAt);
+    if (!lesson) throw new Error("找不到課程");
+    const status = LESSON_STATUSES.has(options.status) ? options.status : "completed";
+    const requestedDeduction = lesson.lessonType !== "trial" && Boolean(options.deductLesson);
+    const student = (data.students || []).find(item => item.id === lesson.studentId);
+    if (lesson.lessonType !== "trial" && !student) throw new Error("找不到學生資料");
+    const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    let record = (data.lessonRecords || []).find(item => item.lessonId === lesson.id && !item.deletedAt);
+    const previousDeduction = Boolean(record?.deductLesson);
+
+    if (requestedDeduction && !previousDeduction && student?.billingType === "package") {
+      if (creditBalance(data, student.id) <= 0) throw new Error("此學生已沒有剩餘堂數，請先新增堂數或關閉扣堂");
+      const restoration = (data.lessonCreditTransactions || []).find(item =>
+        item.studentId === student.id
+        && item.relatedLessonId === lesson.id
+        && item.type === "restoration"
+        && !item.reversedAt
+      );
+      if (restoration) restoration.reversedAt = now;
+      const deduction = (data.lessonCreditTransactions || []).find(item =>
+        item.studentId === student.id
+        && item.relatedLessonId === lesson.id
+        && item.type === "deduction"
+      );
+      if (deduction) deduction.reversedAt = null;
+      else addCreditTransaction(data, {
+        id: idFactory("credit"),
+        studentId: student.id,
+        type: "deduction",
+        amount: -1,
+        reason: "完成課程扣堂",
+        relatedLessonId: lesson.id,
+        createdAt: now,
+        isDemoData: Boolean(lesson.isDemoData),
+      });
+    } else if (!requestedDeduction && previousDeduction && student?.billingType === "package") {
+      const restoration = (data.lessonCreditTransactions || []).find(item =>
+        item.studentId === student.id
+        && item.relatedLessonId === lesson.id
+        && item.type === "restoration"
+      );
+      if (restoration) restoration.reversedAt = null;
+      else addCreditTransaction(data, {
+        id: idFactory("credit"),
+        studentId: student.id,
+        type: "restoration",
+        amount: 1,
+        reason: "取消課程扣堂",
+        relatedLessonId: lesson.id,
+        createdAt: now,
+        isDemoData: Boolean(lesson.isDemoData),
+      });
+    }
+
+    if (record) {
+      record.status = status;
+      record.deductLesson = requestedDeduction;
+      record.note = text(options.note, 2000);
+      record.updatedAt = now;
+    } else {
+      record = {
+        id: idFactory("record"),
+        lessonId: lesson.id,
+        studentId: lesson.studentId,
+        status,
+        deductLesson: requestedDeduction,
+        note: text(options.note, 2000),
+        deletedAt: null,
+        recordedAt: now,
+        updatedAt: now,
+        isDemoData: Boolean(lesson.isDemoData),
+      };
+      data.lessonRecords.push(record);
+    }
+    lesson.status = status;
+    lesson.recordId = record.id;
+    lesson.updatedAt = now;
+    lesson.notes = text(options.note || lesson.notes, 2000);
+    if (student) {
+      syncStudentUsedLessons(data, student.id);
+      student.updatedAt = now;
+    }
+    return { lesson, record };
+  }
+
+  function deleteLessonTransaction(data, options) {
+    const lesson = (data.lessons || []).find(item => item.id === options.lessonId && !item.deletedAt);
+    if (!lesson) throw new Error("找不到課程");
+    const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    const record = (data.lessonRecords || []).find(item => item.lessonId === lesson.id && !item.deletedAt);
+    const student = (data.students || []).find(item => item.id === lesson.studentId);
+    let restoredTransactionId = null;
+    if (options.restoreCredit && record?.deductLesson && student?.billingType === "package") {
+      let restoration = (data.lessonCreditTransactions || []).find(item =>
+        item.studentId === student.id
+        && item.relatedLessonId === lesson.id
+        && item.type === "restoration"
+      );
+      if (restoration) restoration.reversedAt = null;
+      else {
+        restoration = addCreditTransaction(data, {
+          id: idFactory("credit"),
+          studentId: student.id,
+          type: "restoration",
+          amount: 1,
+          reason: "刪除已扣堂課程並加回",
+          relatedLessonId: lesson.id,
+          createdAt: now,
+          isDemoData: Boolean(lesson.isDemoData),
+        }).transaction;
+      }
+      restoredTransactionId = restoration.id;
+    }
+    lesson.deletedAt = now;
+    lesson.updatedAt = now;
+    lesson.deletion = {
+      creditRestored: Boolean(restoredTransactionId),
+      restorationTransactionId: restoredTransactionId,
+      deletedAt: now,
+    };
+    if (record) {
+      record.deletedAt = now;
+      record.updatedAt = now;
+    }
+    if (student) {
+      syncStudentUsedLessons(data, student.id);
+      student.updatedAt = now;
+    }
+    return { lesson, record, restoredTransactionId };
+  }
+
+  function restoreLessonTransaction(data, options) {
+    const lesson = (data.lessons || []).find(item => item.id === options.lessonId && item.deletedAt);
+    if (!lesson) throw new Error("找不到已刪除課程");
+    const now = options.now || new Date().toISOString();
+    const record = (data.lessonRecords || []).find(item => item.lessonId === lesson.id);
+    const student = (data.students || []).find(item => item.id === lesson.studentId);
+    if (lesson.deletion?.restorationTransactionId) {
+      reverseCreditTransaction(data, lesson.deletion.restorationTransactionId, now);
+    }
+    lesson.deletedAt = null;
+    lesson.updatedAt = now;
+    if (record) {
+      record.deletedAt = null;
+      record.updatedAt = now;
+    }
+    lesson.deletion = null;
+    if (student) {
+      syncStudentUsedLessons(data, student.id);
+      student.updatedAt = now;
+    }
+    return { lesson, record };
+  }
+
   function sanitizeCsvCell(value) {
     let output = value == null ? "" : String(value);
     if (/^[=+\-@\t\r\n＝＋－＠]/.test(output)) output = `\t${output}`;
@@ -393,14 +571,18 @@
     creditBalance,
     dateToISO,
     defaultSettings,
+    completeLessonTransaction,
+    deleteLessonTransaction,
     findConflicts,
     intervalsOverlap,
     isRealISODate,
     normalizeData,
     planRecurrence,
     reverseCreditTransaction,
+    restoreLessonTransaction,
     sanitizeCsvCell,
     timeToMinutes,
+    syncStudentUsedLessons,
     weekdayNumber,
   };
 });

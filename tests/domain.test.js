@@ -132,6 +132,42 @@ test("lesson deduction transaction is idempotent", () => {
   assert.equal(domain.addCreditTransaction(data, { ...transaction, id: "credit_duplicate" }).created, false);
 });
 
+test("completing and editing a lesson never deducts twice", () => {
+  const data = domain.normalizeData(legacyData());
+  let sequence = 0;
+  const input = {
+    lessonId: "lesson_1",
+    status: "completed",
+    deductLesson: true,
+    note: "",
+    idFactory: prefix => `${prefix}_${++sequence}`,
+    now: "2026-08-06T13:00:00.000Z",
+  };
+  domain.completeLessonTransaction(data, input);
+  domain.completeLessonTransaction(data, input);
+  assert.equal(domain.creditBalance(data, "student_1"), 5);
+  assert.equal(data.lessonCreditTransactions.filter(item => item.type === "deduction").length, 1);
+});
+
+test("deleting a deducted lesson can restore credit and undo safely", () => {
+  const data = domain.normalizeData(legacyData());
+  let sequence = 0;
+  const idFactory = prefix => `${prefix}_${++sequence}`;
+  domain.completeLessonTransaction(data, {
+    lessonId: "lesson_1",
+    status: "completed",
+    deductLesson: true,
+    idFactory,
+  });
+  assert.equal(domain.creditBalance(data, "student_1"), 5);
+  domain.deleteLessonTransaction(data, { lessonId: "lesson_1", restoreCredit: true, idFactory });
+  assert.equal(domain.creditBalance(data, "student_1"), 6);
+  assert.ok(data.lessons[0].deletedAt);
+  domain.restoreLessonTransaction(data, { lessonId: "lesson_1" });
+  assert.equal(domain.creditBalance(data, "student_1"), 5);
+  assert.equal(data.lessons[0].deletedAt, null);
+});
+
 test("CSV formula starters are exported as text", () => {
   assert.equal(domain.sanitizeCsvCell("=1+1"), "\"\t=1+1\"");
   assert.equal(domain.sanitizeCsvCell("一般文字"), "\"一般文字\"");

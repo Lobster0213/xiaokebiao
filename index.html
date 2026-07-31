@@ -358,6 +358,14 @@ textarea { min-height: 96px; resize: vertical; }
 .toast.error { background: var(--red); }
 .toast-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .toast-action { border: 0; border-radius: 9px; background: rgba(255,255,255,.16); color: white; padding: 7px 9px; font-weight: 800; white-space: nowrap; }
+.credit-alert { margin: 0 0 12px; padding: 12px 14px; border: 1px solid #fed7aa; border-radius: 15px; background: #fff7ed; color: #9a3412; }
+.credit-alert strong { display: block; font-size: 14px; }
+.credit-alert p { margin: 4px 0 0; font-size: 13px; }
+.credit-alert-actions { display: flex; gap: 8px; margin-top: 10px; }
+.credit-alert-actions .btn { padding: 8px 11px; min-height: 36px; }
+.credit-alert details { margin-top: 8px; }
+.credit-alert summary { cursor: pointer; font-weight: 800; }
+.credit-alert-item { padding: 9px 0; border-top: 1px solid #fed7aa; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 .file-input { display: none; }
@@ -1061,6 +1069,15 @@ textarea { min-height: 96px; resize: vertical; }
     rescheduled: false,
   };
 
+  const CREDIT_TYPE_LABELS = {
+    purchase: "購買",
+    gift: "贈送",
+    manualAdjustment: "人工修正",
+    deduction: "扣堂",
+    restoration: "還原",
+    refund: "退款",
+  };
+
   let invalidStoredData = null;
   let state = loadData();
   let ui = createUIState();
@@ -1492,12 +1509,57 @@ textarea { min-height: 96px; resize: vertical; }
         <span class="summary-divider" aria-hidden="true"></span>
         <div>本月完成 <strong>${monthCompleted}</strong> 堂</div>
       </section>
+      ${renderTodayCreditReminder(lessons)}
       <section class="section">
         <div class="section-heading"><h2>今日課程</h2><span class="subtle">依時間排序</span></div>
         <div class="card-list">${lessons.length ? lessons.map(l => lessonCard(l)).join("") : emptyState("今天沒有安排課程", "先讓自己休息一下吧。", "新增課程", "add-lesson")}</div>
       </section>
       <div class="fab-row"><button class="btn btn-primary btn-full" data-action="add-lesson">＋ 新增課程</button></div>
       ${bottomNav()}`;
+  }
+
+  function todayCreditReminders(todayLessons) {
+    const reminders = [];
+    const studentIds = [...new Set(todayLessons.filter(lesson => lesson.lessonType !== "trial").map(lesson => lesson.studentId))];
+    for (const studentId of studentIds) {
+      const student = studentById(studentId);
+      if (!student || student.billingType !== "package") continue;
+      const studentLessons = todayLessons.filter(lesson => lesson.studentId === studentId);
+      const completedDeduction = studentLessons.find(lesson => recordByLessonId(lesson.id)?.deductLesson);
+      const balance = calculateRemainingLessons(student);
+      if (completedDeduction && balance === 0) {
+        reminders.push({ student, lesson: completedDeduction, state: "usedUp" });
+        continue;
+      }
+      const upcoming = studentLessons.filter(lesson =>
+        ["scheduled", "inProgress"].includes(lesson.status)
+        && !recordByLessonId(lesson.id)?.deductLesson
+      );
+      if (balance > 0 && balance <= upcoming.length) {
+        reminders.push({ student, lesson: upcoming[balance - 1], state: "last" });
+      }
+    }
+    return reminders;
+  }
+
+  function reminderActions(reminder) {
+    return `<div class="credit-alert-actions"><button class="btn btn-soft" data-action="open-student" data-id="${reminder.student.id}">查看學生</button><button class="btn btn-primary" data-action="add-credit" data-id="${reminder.student.id}">新增堂數</button></div>`;
+  }
+
+  function renderTodayCreditReminder(todayLessons) {
+    const reminders = todayCreditReminders(todayLessons);
+    if (!reminders.length) return "";
+    if (reminders.length === 1) {
+      const reminder = reminders[0];
+      const message = reminder.state === "usedUp"
+        ? `${reminder.student.name}的堂數已用完`
+        : `${reminder.student.name}｜今天 ${reminder.lesson.startTime}｜今天是最後 1 堂`;
+      return `<aside class="credit-alert" aria-label="堂數提醒"><strong>${escapeHtml(message)}</strong>${reminderActions(reminder)}</aside>`;
+    }
+    return `<aside class="credit-alert" aria-label="堂數提醒"><strong>今天有 ${reminders.length} 位學生即將用完堂數</strong><details><summary>展開查看</summary>${reminders.map(reminder => {
+      const text = reminder.state === "usedUp" ? `${reminder.student.name}的堂數已用完` : `${reminder.student.name}｜${reminder.lesson.startTime}｜最後 1 堂`;
+      return `<div class="credit-alert-item"><p>${escapeHtml(text)}</p>${reminderActions(reminder)}</div>`;
+    }).join("")}</details></aside>`;
   }
 
   function getWeekStartMonday(centerISO) {
@@ -1772,6 +1834,9 @@ textarea { min-height: 96px; resize: vertical; }
     const remaining = calculateRemainingLessons(student);
     const lessons = activeLessons().filter(l => l.studentId === student.id).sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
     const records = lessons.map(l => ({ lesson: l, record: recordByLessonId(l.id) })).filter(x => x.record);
+    const transactions = (state.lessonCreditTransactions || [])
+      .filter(transaction => transaction.studentId === student.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return `
       <div class="page-title-row"><button class="back-btn" data-action="back-students" aria-label="返回學生列表">←</button><h1 style="flex:1;text-align:center">學生資料</h1><span style="width:42px"></span></div>
       <section class="detail-hero">
@@ -1782,12 +1847,15 @@ textarea { min-height: 96px; resize: vertical; }
           <div class="info-cell"><small>購買總堂數</small><strong>${student.totalLessons == null ? "—" : student.totalLessons}</strong></div>
           <div class="info-cell"><small>每堂費用</small><strong>${money(student.pricePerLesson)}</strong></div>
         </div>
-        <div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯資料</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button></div>
+        <div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯資料</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button>${student.billingType === "package" ? `<button class="btn btn-soft" style="grid-column:1/-1" data-action="add-credit" data-id="${student.id}">＋ 新增堂數</button>` : ""}</div>
         ${student.contactNote ? `<p class="lesson-meta" style="margin:14px 2px 0">聯絡備註：${escapeHtml(student.contactNote)}</p>` : ""}
         ${student.notes ? `<p class="lesson-meta" style="margin:8px 2px 0">學生備註：${escapeHtml(student.notes)}</p>` : ""}
       </section>
       <section class="section"><div class="section-heading"><h2>上課紀錄</h2><span class="subtle">${records.length} 筆</span></div>
       <div class="card-list">${records.length ? records.map(({ lesson, record }) => `<article class="record-card"><button class="card-hit" style="width:100%;border:0;background:transparent;text-align:left;padding:0" data-action="edit-record" data-id="${lesson.id}"><div class="record-row"><div><h3>${formatShortDate(lesson.date)} · ${lesson.startTime}</h3><div class="lesson-meta">${escapeHtml(lesson.subject)} · ${record.deductLesson ? "有扣堂" : "未扣堂"}</div></div>${statusBadge(record.status)}</div>${record.note ? `<p>${escapeHtml(record.note)}</p>` : ""}</button></article>`).join("") : emptyState("還沒有上課紀錄", "完成課程後，紀錄會自動出現在這裡。")}</div></section>
+      ${student.billingType === "package" ? `<section class="section"><div class="section-heading"><h2>堂數異動</h2><span class="subtle">${transactions.length} 筆</span></div>
+        <div class="card-list">${transactions.length ? transactions.map(transaction => `<article class="record-card"><div class="record-row"><div><h3>${escapeHtml(CREDIT_TYPE_LABELS[transaction.type] || transaction.type)}${transaction.reversedAt ? "（已撤銷）" : ""}</h3><div class="lesson-meta">${escapeHtml(new Date(transaction.createdAt).toLocaleString("zh-TW"))}${transaction.reason ? ` · ${escapeHtml(transaction.reason)}` : ""}</div></div><strong style="color:${transaction.amount >= 0 ? "var(--green)" : "var(--red)"}">${transaction.amount > 0 ? "+" : ""}${transaction.amount}</strong></div></article>`).join("") : emptyState("還沒有堂數異動", "新增堂數或完成扣堂後會顯示在這裡。")}</div>
+      </section>` : ""}
       ${bottomNav()}`;
   }
 
@@ -1948,8 +2016,69 @@ textarea { min-height: 96px; resize: vertical; }
           <button class="btn btn-soft" data-action="edit-lesson" data-id="${lesson.id}">編輯課程</button>
           <button class="btn btn-soft" data-action="copy-lesson" data-id="${lesson.id}">複製課程</button>
           <button class="btn btn-ghost" style="grid-column:1/-1" data-action="lesson-more" data-id="${lesson.id}">${lesson.recordId ? "查看／修改上課紀錄" : "完成、請假、改期或取消"}</button>
+          <button class="btn btn-danger" style="grid-column:1/-1" data-action="delete-lesson" data-id="${lesson.id}">刪除課程</button>
         </div>
       </section>`);
+  }
+
+  function restoreDeletedLesson(lessonId) {
+    try {
+      const result = Domain.restoreLessonTransaction(state, { lessonId, now: new Date().toISOString() });
+      saveData();
+      ui.tab = "schedule";
+      ui.selectedDate = result.lesson.date;
+      render();
+      toast("課程與相關堂數已復原");
+    } catch (error) {
+      toast(error.message || "無法復原課程", "error");
+    }
+  }
+
+  function deleteLessonSheet(lesson) {
+    if (!lesson || lesson.deletedAt) return;
+    if (!confirm(`確定要刪除 ${formatDate(lesson.date)} ${lesson.startTime} 的課程嗎？`)) return;
+    const record = recordByLessonId(lesson.id);
+    const deducted = Boolean(record?.deductLesson);
+    openSheet("再次確認刪除", `
+      <form id="delete-lesson-form" class="form-grid">
+        <div class="warning"><strong>刪除後課程會從一般課表移除。</strong><br>取消課程則會保留在課表中，兩者用途不同。</div>
+        ${deducted ? `<div class="field"><label>這堂課曾扣除 1 堂，請選擇堂數處理方式</label>
+          <div class="status-options">
+            <label class="status-option"><input type="radio" name="creditChoice" value="restore" checked><span>刪除並加回 1 堂</span></label>
+            <label class="status-option"><input type="radio" name="creditChoice" value="keep"><span>僅刪除，不調整堂數</span></label>
+          </div></div>` : `<p class="lesson-meta">這堂課沒有扣堂，刪除不會變更剩餘堂數。</p>`}
+        <div class="sheet-footer"><button class="btn btn-danger btn-full" type="submit">確認刪除課程</button></div>
+      </form>`, root => {
+        const form = $("#delete-lesson-form", root);
+        let submitting = false;
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (submitting) return;
+          submitting = true;
+          const button = $('button[type="submit"]', form);
+          button.disabled = true;
+          try {
+            const restoreCredit = deducted && new FormData(form).get("creditChoice") === "restore";
+            Domain.deleteLessonTransaction(state, {
+              lessonId: lesson.id,
+              restoreCredit,
+              idFactory: uid,
+              now: new Date().toISOString(),
+            });
+            saveData();
+            closeSheet();
+            render();
+            toast("課程已刪除", "success", {
+              duration: 8000,
+              actions: [{ label: "復原", handler: () => restoreDeletedLesson(lesson.id) }],
+            });
+          } catch (error) {
+            submitting = false;
+            button.disabled = false;
+            toast(error.message || "刪除課程失敗", "error");
+          }
+        });
+      });
   }
 
   function studentForm(student = null) {
@@ -2005,12 +2134,116 @@ textarea { min-height: 96px; resize: vertical; }
             pricePerLesson: fd.get("pricePerLesson") ? Number(fd.get("pricePerLesson")) : null,
             defaultDuration: Number(fd.get("defaultDuration")),
             notes: String(fd.get("notes") || "").trim(),
+            isDemoData: Boolean(student?.isDemoData),
             createdAt: student?.createdAt || now,
             updatedAt: now,
           };
-          if (editing) state.students = state.students.map(s => s.id === student.id ? next : s);
-          else state.students.push(next);
+          if (editing) {
+            state.students = state.students.map(s => s.id === student.id ? next : s);
+            const previousTotal = student.billingType === "package" ? Number(student.totalLessons || 0) : 0;
+            const nextTotal = billingType === "package" ? Number(totalLessons || 0) : 0;
+            const adjustment = nextTotal - previousTotal;
+            if (adjustment) {
+              Domain.addCreditTransaction(state, {
+                id: uid("credit"),
+                studentId: next.id,
+                type: "manualAdjustment",
+                amount: adjustment,
+                reason: "編輯學生時調整購買總堂數",
+                createdAt: now,
+                isDemoData: Boolean(next.isDemoData),
+              });
+            }
+          } else {
+            state.students.push(next);
+            if (billingType === "package") {
+              Domain.addCreditTransaction(state, {
+                id: uid("credit"),
+                studentId: next.id,
+                type: "purchase",
+                amount: totalLessons,
+                reason: "建立學生的初始堂數",
+                createdAt: now,
+              });
+            }
+          }
           saveData(); closeSheet(); ui.tab = "students"; ui.studentDetailId = editing ? next.id : null; render(); toast(editing ? "學生資料已更新" : "學生已新增");
+        });
+      });
+  }
+
+  function creditSheet(student) {
+    if (!student || student.billingType !== "package") return;
+    const current = calculateRemainingLessons(student);
+    const presets = [1, 2, 4, 8, 12, 16, 20];
+    openSheet("新增堂數", `
+      <form id="credit-form" class="form-grid" novalidate>
+        <div class="detail-hero" style="margin:0"><div class="record-row"><div><strong>${escapeHtml(student.name)}</strong><div class="lesson-meta">目前剩餘堂數</div></div><strong>${current}</strong></div></div>
+        <div class="field"><label>本次新增</label><div class="repeat-presets">${presets.map(value => `<button type="button" class="repeat-preset ${value === 4 ? "active" : ""}" data-credit-value="${value}">${value} 堂</button>`).join("")}<button type="button" class="repeat-preset" data-credit-value="custom">自訂</button></div></div>
+        <div class="field" id="custom-credit-field" hidden><label for="custom-credit">自訂堂數（1～999）</label><input id="custom-credit" name="customCredit" type="number" min="1" max="999" step="1" inputmode="numeric" value="1"><div class="form-error" data-error="amount"></div></div>
+        <div class="field"><label for="credit-type">異動類型</label><select id="credit-type" name="type"><option value="purchase">購買</option><option value="gift">贈送</option><option value="manualAdjustment">人工修正</option></select></div>
+        <div class="field"><label for="credit-reason">原因／備註</label><input id="credit-reason" name="reason" maxlength="500" placeholder="例如：購買 4 堂方案"></div>
+        <div id="credit-preview" class="repeat-summary" aria-live="polite"></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">確認新增</button></div>
+      </form>`, root => {
+        const form = $("#credit-form", root);
+        const customField = $("#custom-credit-field", root);
+        const customInput = $("#custom-credit", root);
+        let selected = 4;
+        let submitting = false;
+        const amount = () => selected === "custom" ? Number(customInput.value) : Number(selected);
+        const updatePreview = () => {
+          const value = amount();
+          const valid = Number.isInteger(value) && value >= 1 && value <= 999;
+          $("#credit-preview", root).innerHTML = valid
+            ? `本次新增 <strong>${value}</strong> 堂<br>新增後剩餘 <strong>${current + value}</strong> 堂`
+            : "請輸入 1～999 的整數";
+        };
+        $$("[data-credit-value]", root).forEach(button => button.addEventListener("click", () => {
+          selected = button.dataset.creditValue === "custom" ? "custom" : Number(button.dataset.creditValue);
+          $$("[data-credit-value]", root).forEach(item => item.classList.toggle("active", item === button));
+          customField.hidden = selected !== "custom";
+          if (selected === "custom") customInput.focus();
+          updatePreview();
+        }));
+        customInput.addEventListener("input", updatePreview);
+        updatePreview();
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (submitting) return;
+          const value = amount();
+          const error = $('[data-error="amount"]', form);
+          error.textContent = "";
+          if (!Number.isInteger(value) || value < 1 || value > 999) {
+            error.textContent = "自訂堂數只能輸入 1～999 的整數";
+            return;
+          }
+          submitting = true;
+          const button = $('button[type="submit"]', form);
+          button.disabled = true;
+          try {
+            const now = new Date().toISOString();
+            Domain.addCreditTransaction(state, {
+              id: uid("credit"),
+              studentId: student.id,
+              type: String(new FormData(form).get("type")),
+              amount: value,
+              reason: String(new FormData(form).get("reason") || "").trim() || `新增 ${value} 堂`,
+              createdAt: now,
+              isDemoData: Boolean(student.isDemoData),
+            });
+            student.totalLessons = Number(student.totalLessons || 0) + value;
+            student.updatedAt = now;
+            saveData();
+            closeSheet();
+            ui.studentDetailId = student.id;
+            render();
+            toast(`已新增 ${value} 堂，現在剩餘 ${calculateRemainingLessons(student)} 堂`);
+          } catch (errorValue) {
+            submitting = false;
+            button.disabled = false;
+            error.textContent = errorValue.message || "新增堂數失敗";
+          }
         });
       });
   }
@@ -2315,33 +2548,14 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function completeLesson(lesson, status, deductLesson, note) {
-    const student = studentById(lesson.studentId);
-    if (!student) throw new Error("找不到學生資料");
-    const existing = recordByLessonId(lesson.id);
-    const previousDeduct = existing?.deductLesson ? 1 : 0;
-    const nextDeduct = deductLesson ? 1 : 0;
-    const delta = nextDeduct - previousDeduct;
-    if (student.billingType === "package" && delta > 0 && calculateRemainingLessons(student) <= 0) {
-      throw new Error("此學生已沒有剩餘堂數，請先調整堂數或關閉扣堂");
-    }
-    student.usedLessons = Math.max(0, student.usedLessons + delta);
-    student.updatedAt = new Date().toISOString();
-    const now = new Date().toISOString();
-    let record;
-    if (existing) {
-      existing.status = status;
-      existing.deductLesson = deductLesson;
-      existing.note = note;
-      existing.updatedAt = now;
-      record = existing;
-    } else {
-      record = { id: uid("record"), lessonId: lesson.id, studentId: lesson.studentId, status, deductLesson, note, recordedAt: now, updatedAt: now };
-      state.lessonRecords.push(record);
-    }
-    lesson.status = status;
-    lesson.recordId = record.id;
-    lesson.updatedAt = now;
-    lesson.notes = note || lesson.notes;
+    Domain.completeLessonTransaction(state, {
+      lessonId: lesson.id,
+      status,
+      deductLesson,
+      note,
+      idFactory: uid,
+      now: new Date().toISOString(),
+    });
     saveData();
   }
 
@@ -2514,6 +2728,7 @@ textarea { min-height: 96px; resize: vertical; }
     if (action === "notify") toast("通知功能會在後續版本加入");
     else if (action === "add-student") studentForm();
     else if (action === "edit-student") studentForm(studentById(id));
+    else if (action === "add-credit") creditSheet(studentById(id));
     else if (action === "edit-teacher") teacherProfileForm();
     else if (action === "install-app") installApp();
     else if (action === "add-lesson") lessonForm(null, actionEl.dataset.studentId || null);
@@ -2523,6 +2738,7 @@ textarea { min-height: 96px; resize: vertical; }
       lessonForm(null, null, null, { date, startTime: actionEl.dataset.startTime || null });
     }
     else if (action === "course-detail") courseDetailSheet(lessonById(id));
+    else if (action === "delete-lesson") deleteLessonSheet(lessonById(id));
     else if (action === "edit-lesson") lessonForm(lessonById(id));
     else if (action === "copy-lesson") { const source = lessonById(id); if (source) lessonForm(null, source.studentId, source); }
     else if (action === "start-lesson") { closeSheet(); startLesson(id); }
