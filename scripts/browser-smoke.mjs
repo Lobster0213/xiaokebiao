@@ -66,6 +66,19 @@ async function click(selector) {
 
 await command("Runtime.enable");
 await command("Page.enable");
+await command("Page.addScriptToEvaluateOnNewDocument", {
+  source: `(() => {
+    window.__notificationEvents = [];
+    class MockNotification {
+      static permission = "granted";
+      static requestPermission = async () => "granted";
+      constructor(title, options = {}) {
+        window.__notificationEvents.push({ title, body: options.body || "", tag: options.tag || "" });
+      }
+    }
+    Object.defineProperty(window, "Notification", { configurable: true, value: MockNotification });
+  })()`,
+});
 await command("Emulation.setDeviceMetricsOverride", {
   width: 390,
   height: 844,
@@ -95,19 +108,33 @@ const initial = await evaluate(`({
 if (initial.width !== 390 || initial.scrollWidth > 390) throw new Error(`Mobile viewport overflow: ${JSON.stringify(initial)}`);
 if (!initial.onboarding.includes("1/5")) throw new Error("Five-step first-run onboarding did not open");
 
-for (let step = 0; step < 5; step += 1) await click("#tour-next");
+for (let attempt = 0; attempt < 8; attempt += 1) {
+  const hasTour = await evaluate("Boolean(document.querySelector('#tour-next'))");
+  if (!hasTour) break;
+  await click("#tour-next");
+  await delay(120);
+}
+if (await evaluate("Boolean(document.querySelector('.tour-card'))")) throw new Error("Onboarding did not close after completion");
+await evaluate("document.querySelector('#toast-root').innerHTML = ''");
 const home = await evaluate(`({
   headings: [...document.querySelectorAll('.section-heading h2')].map(item => item.textContent),
+  lessonCount: document.querySelectorAll('.section .lesson-card').length,
+  lessonTimes: [...document.querySelectorAll('.section .time-block strong')].map(item => item.textContent),
   hasSummaryBar: Boolean(document.querySelector('.summary-bar')),
   hasDirectAddLesson: Boolean(document.querySelector('[data-action="add-lesson"]'))
 })`);
-if (!home.headings.includes("下一堂課") || !home.headings.includes("今日課程") || home.hasSummaryBar || home.hasDirectAddLesson) {
+if (home.headings.length !== 1 || home.headings[0] !== "今日課程" || home.lessonCount !== 3 || home.lessonTimes.join(",") !== "09:30,13:00,16:30" || home.hasSummaryBar || home.hasDirectAddLesson) {
   throw new Error(`Home hierarchy regression: ${JSON.stringify(home)}`);
 }
 const homeScreenshotPath = screenshotPath.replace(/\.png$/i, "-home.png");
 const homeScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 fs.mkdirSync(path.dirname(homeScreenshotPath), { recursive: true });
 fs.writeFileSync(homeScreenshotPath, Buffer.from(homeScreenshot.data, "base64"));
+await click('[data-action="notify"]');
+const notification = await evaluate(`window.__notificationEvents.at(-1) || null`);
+if (!notification || notification.title !== "小課表測試通知" || !notification.body.includes("今天共有 3 堂課")) {
+  throw new Error(`Notification test failed: ${JSON.stringify(notification)}`);
+}
 await click('[data-tab="schedule"]');
 
 const week = await evaluate(`({
@@ -164,5 +191,5 @@ fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
 fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
 
 if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
-console.log(JSON.stringify({ initial, home, week, monthDays, monthCounts, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
+console.log(JSON.stringify({ initial, home, notification, week, monthDays, monthCounts, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
 socket.close();

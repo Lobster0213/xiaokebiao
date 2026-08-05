@@ -1484,7 +1484,7 @@ textarea { min-height: 96px; resize: vertical; }
     return `
       <header class="topbar">
         <div class="brand"><div class="brand-mark">課</div><span>小課表</span></div>
-        <button class="icon-btn" aria-label="通知（示範）" data-action="notify">🔔</button>
+        <button class="icon-btn" aria-label="測試通知" title="測試通知" data-action="notify">🔔</button>
       </header>`;
   }
 
@@ -1554,29 +1554,15 @@ textarea { min-height: 96px; resize: vertical; }
     return `${subjects.slice(0, 2).join("・")}＋${subjects.length - 2}`;
   }
 
-  function nextUpcomingLesson() {
-    const now = new Date();
-    return activeLessons().filter(lesson => {
-      if (!["scheduled", "inProgress"].includes(lesson.status)) return false;
-      if (lesson.status === "inProgress") return true;
-      return new Date(`${lesson.date}T${lesson.startTime}:00`).getTime() >= now.getTime();
-    }).sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`))[0] || null;
-  }
-
   function renderHome() {
     const today = todayISO();
     const lessons = activeLessons().filter(l => l.date === today).sort((a, b) => a.startTime.localeCompare(b.startTime));
-    const nextLesson = nextUpcomingLesson();
     return `
       ${topbar()}
       <section class="hero"><h1>${greeting()}，${escapeHtml(state.teacherProfile?.name || "林老師")} 👋</h1><p>${formatDate(today)}</p></section>
       ${renderTodayCreditReminder(lessons)}
       <section class="section">
-        <div class="section-heading"><h2>下一堂課</h2></div>
-        <div class="card-list">${nextLesson ? lessonCard(nextLesson, { next: true }) : emptyState("目前沒有待上課程", "到課表安排下一堂課。", "前往課表", "go-schedule")}</div>
-      </section>
-      <section class="section">
-        <div class="section-heading"><h2>今日課程</h2><span class="subtle">依時間排序</span></div>
+        <div class="section-heading"><h2>今日課程</h2><span class="subtle">共 ${lessons.length} 堂・依時間排序</span></div>
         <div class="card-list">${lessons.length ? lessons.map(l => lessonCard(l)).join("") : emptyState("今天沒有安排課程", "可到課表查看其他日期或新增課程。", "前往課表", "go-schedule")}</div>
       </section>
       ${bottomNav()}`;
@@ -3117,6 +3103,25 @@ textarea { min-height: 96px; resize: vertical; }
     }
   }
 
+  function testNotificationMessage() {
+    const lessonCount = activeLessons().filter(lesson => lesson.date === todayISO()).length;
+    return `通知測試成功！今天共有 ${lessonCount} 堂課，可在首頁查看。`;
+  }
+
+  function showTestNotification() {
+    const title = "小課表測試通知";
+    const body = testNotificationMessage();
+    if (window.AndroidUpdater?.showCreditReminder) {
+      window.AndroidUpdater.showCreditReminder(title, body);
+      return true;
+    }
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(title, { body, icon: "./icons/icon-192.png", tag: `test-${Date.now()}` });
+      return true;
+    }
+    return false;
+  }
+
   function processAutoCompletions(options = {}) {
     try {
       const result = Domain.autoCompleteOverdueLessons(state, { idFactory: uid, now: options.now || new Date().toISOString() });
@@ -3134,15 +3139,14 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   async function requestNotificationPermission() {
-    if (window.AndroidUpdater?.requestNotificationPermission) {
-      window.AndroidUpdater.requestNotificationPermission();
-      sendDailyCreditReminderIfNeeded();
-      toast("已開啟每日一次的堂數提醒");
+    if (window.AndroidUpdater?.showCreditReminder) {
+      showTestNotification();
+      toast("已要求送出測試通知；若出現權限視窗，請點允許");
       return;
     }
     if (!("Notification" in window)) { toast("此瀏覽器不支援系統通知；首頁仍會顯示提醒", "error"); return; }
     const permission = await Notification.requestPermission();
-    if (permission === "granted") { sendDailyCreditReminderIfNeeded(); toast("已開啟每日一次的堂數提醒"); }
+    if (permission === "granted") { showTestNotification(); toast("測試通知已送出；每日堂數提醒也已開啟"); }
     else toast("尚未允許系統通知；首頁仍會顯示提醒");
   }
 
