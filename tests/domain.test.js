@@ -273,6 +273,17 @@ test("scheduled formal lesson auto-completes and deducts exactly once", () => {
   assert.equal(data.lessonCreditTransactions.filter(item => item.type === "deduction").length, 1);
 });
 
+test("lesson never auto-completes before its end time", () => {
+  const data = domain.normalizeData(legacyData());
+  const result = domain.autoCompleteOverdueLessons(data, {
+    now: "2026-08-05T00:00:00.000Z",
+    idFactory: prefix => `${prefix}_early`,
+  });
+  assert.equal(result.completedCount, 0);
+  assert.equal(data.lessons[0].status, "scheduled");
+  assert.equal(data.lessonRecords.length, 0);
+});
+
 test("zero-balance package lesson auto-completes without deduction or retroactive charge", () => {
   const source = legacyData();
   source.students[0].totalLessons = 4;
@@ -317,6 +328,29 @@ test("teacher correction reverses an automatic deduction with traceable ledger e
   assert.equal(data.lessons[0].autoCompletedAt, null);
   assert.equal(data.lessonRecords[0].autoCompleted, false);
   assert.equal(data.lessonCreditTransactions.filter(item => item.relatedLessonId === "lesson_1").length, 2);
+});
+
+test("student-leave correction restores credit and recalculated balance", () => {
+  const data = domain.normalizeData(legacyData());
+  let sequence = 0;
+  const idFactory = prefix => `${prefix}_leave_${++sequence}`;
+  domain.autoCompleteOverdueLessons(data, { now: "2026-08-07T00:00:00.000Z", idFactory });
+  domain.completeLessonTransaction(data, { lessonId: "lesson_1", status: "studentLeave", deductLesson: false, completionSource: "teacher", idFactory });
+  assert.equal(domain.creditBalance(data, "student_1"), 6);
+  assert.equal(data.lessonRecords[0].status, "studentLeave");
+});
+
+test("JSON round-trip and restart preserve auto-completion fields without repeating work", () => {
+  const data = domain.normalizeData(legacyData());
+  let sequence = 0;
+  const idFactory = prefix => `${prefix}_roundtrip_${++sequence}`;
+  domain.autoCompleteOverdueLessons(data, { now: "2026-08-07T00:00:00.000Z", idFactory });
+  const restored = domain.normalizeData(JSON.parse(JSON.stringify(data)), { now: "2026-08-08T00:00:00.000Z" });
+  assert.ok(restored.lessons[0].autoCompletedAt);
+  assert.equal(restored.lessons[0].completionSource, "system");
+  assert.equal(restored.lessonRecords[0].autoCompleted, true);
+  assert.equal(domain.autoCompleteOverdueLessons(restored, { now: "2026-08-08T00:00:00.000Z", idFactory }).completedCount, 0);
+  assert.equal(restored.lessonCreditTransactions.filter(item => item.type === "deduction").length, 1);
 });
 
 test("rescheduling an auto-completed lesson restores credit and records history", () => {
