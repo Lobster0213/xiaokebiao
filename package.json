@@ -1,6 +1,6 @@
 {
   "name": "xiaokebiao",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "小課表 Web/PWA 與 Android 包裝專案",
   "scripts": {

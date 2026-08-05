@@ -10,7 +10,10 @@ new Function(inlineScript[1]);
 const domainPath = path.join(root, "app-domain.js");
 delete require.cache[require.resolve(domainPath)];
 const domain = require(domainPath);
-if (domain.DATA_VERSION !== 7) throw new Error("DATA_VERSION 必須為 7");
+if (domain.DATA_VERSION !== 8) throw new Error("DATA_VERSION 必須為 8");
+for (const required of ["autoCompleteOverdueLessons", "rescheduleLessonTransaction", "onboardingCurrentStep", "新增課程"]) {
+  if (!html.includes(required) && !fs.readFileSync(domainPath, "utf8").includes(required)) throw new Error(`v0.8 缺少 ${required}`);
+}
 
 JSON.parse(fs.readFileSync(path.join(root, "manifest.webmanifest"), "utf8"));
 new Function(fs.readFileSync(path.join(root, "service-worker.js"), "utf8"));
