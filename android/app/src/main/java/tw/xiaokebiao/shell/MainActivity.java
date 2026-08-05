@@ -1,8 +1,12 @@
 package tw.xiaokebiao.shell;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -25,6 +29,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.core.content.FileProvider;
+import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -50,6 +57,8 @@ public final class MainActivity extends Activity {
     private static final String PREFS = "xiaokebiao_update";
     private static final String APK_FILENAME = "xiaokebiao-release-update.apk";
     private static final int UNKNOWN_SOURCES_REQUEST = 4107;
+    private static final int NOTIFICATION_REQUEST = 4108;
+    private static final String REMINDER_CHANNEL = "credit_reminders";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -67,6 +76,8 @@ public final class MainActivity extends Activity {
     private int downloadProgress = 0;
     private boolean awaitingUnknownSources = false;
     private boolean installerLaunched = false;
+    private String pendingReminderTitle = "";
+    private String pendingReminderBody = "";
 
     private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
         @Override
@@ -83,6 +94,7 @@ public final class MainActivity extends Activity {
         downloadManager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
         activeDownloadId = prefs.getLong("downloadId", -1L);
         registerDownloadReceiver();
+        ensureReminderChannel();
 
         webView = new WebView(this);
         webView.setBackgroundColor(0xfff5f8ff);
@@ -143,6 +155,63 @@ public final class MainActivity extends Activity {
         } else if (installerLaunched) {
             installerLaunched = false;
             setState("ready", "安裝尚未完成；你可以再次點「繼續安裝」");
+        }
+        if (webView != null) webView.evaluateJavascript("window.dispatchEvent(new Event('xiaokebiao:resume'));", null);
+    }
+
+    private void ensureReminderChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationChannel channel = new NotificationChannel(
+                REMINDER_CHANNEL,
+                "堂數提醒",
+                NotificationManager.IMPORTANCE_DEFAULT
+        );
+        channel.setDescription("每天最多一次，提醒今天最後一堂或需要補充堂數的學生");
+        getSystemService(NotificationManager.class).createNotificationChannel(channel);
+    }
+
+    private void requestReminderPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_REQUEST);
+        }
+    }
+
+    private void showCreditReminder(String title, String body) {
+        pendingReminderTitle = title;
+        pendingReminderBody = body;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestReminderPermission();
+            return;
+        }
+        Intent launchIntent = new Intent(this, MainActivity.class);
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        NotificationCompat.Builder notification = new NotificationCompat.Builder(this, REMINDER_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true);
+        getSystemService(NotificationManager.class).notify(8001, notification.build());
+        pendingReminderTitle = "";
+        pendingReminderBody = "";
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == NOTIFICATION_REQUEST && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED
+                && !pendingReminderTitle.isEmpty()) {
+            showCreditReminder(pendingReminderTitle, pendingReminderBody);
         }
     }
 
@@ -476,6 +545,16 @@ public final class MainActivity extends Activity {
         public void setWifiOnly(boolean enabled) {
             prefs.edit().putBoolean("wifiOnly", enabled).apply();
             pushStateToWeb();
+        }
+
+        @JavascriptInterface
+        public void requestNotificationPermission() {
+            runOnUiThread(MainActivity.this::requestReminderPermission);
+        }
+
+        @JavascriptInterface
+        public void showCreditReminder(String title, String body) {
+            runOnUiThread(() -> MainActivity.this.showCreditReminder(title, body));
         }
     }
 }
