@@ -5,14 +5,15 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const DATA_VERSION = 7;
-  const ONBOARDING_VERSION = 1;
+  const DATA_VERSION = 8;
+  const ONBOARDING_VERSION = 2;
   const SAFE_ID = /^[A-Za-z0-9_-]{1,100}$/;
   const ISO_DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
   const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
   const CREDIT_TYPES = new Set(["purchase", "gift", "manualAdjustment", "deduction", "restoration", "refund"]);
   const LESSON_STATUSES = new Set(["scheduled", "inProgress", "completed", "studentLeave", "teacherLeave", "absent", "cancelled", "rescheduled"]);
   const TRIAL_RESULTS = new Set(["pending", "converted", "notContinuing", "followUp"]);
+  const PRESET_DURATIONS = new Set([30, 45, 60, 90, 120, 180]);
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -25,6 +26,27 @@
   function numberOr(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function normalizeDuration(value, fallback = 60) {
+    const duration = Math.trunc(numberOr(value, fallback));
+    return duration >= 15 && duration <= 360 ? duration : fallback;
+  }
+
+  function normalizeSubjects(value, legacySubject = "") {
+    const source = Array.isArray(value)
+      ? [...value]
+      : typeof value === "string"
+        ? value.split(/[,，、\n]/)
+        : [];
+    if (legacySubject) source.unshift(legacySubject);
+    const seenSubjects = new Set();
+    return source.map(item => text(item, 100).trim()).filter(item => {
+      const key = item.toLocaleLowerCase();
+      if (!item || seenSubjects.has(key)) return false;
+      seenSubjects.add(key);
+      return true;
+    });
   }
 
   function isRealISODate(value) {
@@ -137,6 +159,16 @@
     return {
       hasCompletedOnboarding: Boolean(existingUser),
       onboardingVersion: existingUser ? ONBOARDING_VERSION : 0,
+      onboardingCurrentStep: existingUser ? 5 : 1,
+      contextualTips: {
+        recurringConflict: false,
+        lastLessonReminder: false,
+        trialConversion: false,
+        backup: false,
+        deleteAndRestoreCredit: false,
+        rescheduleScope: false,
+      },
+      notifications: { lastCreditReminderDate: "" },
       update: {
         autoCheck: true,
         wifiOnly: true,
@@ -164,18 +196,23 @@
       if (seen.has(`student:${id}`)) throw new Error(`學生 ID 重複：${id}`);
       seen.add(`student:${id}`);
       const billingType = student.billingType === "perLesson" ? "perLesson" : "package";
+      const subjects = normalizeSubjects(student.subjects, text(student.subject, 100).trim());
+      const requestedDefaultSubject = text(student.defaultSubject, 100).trim();
+      const defaultSubject = subjects.includes(requestedDefaultSubject) ? requestedDefaultSubject : (subjects[0] || "");
       return {
         ...student,
         id,
         name: text(student.name, 100).trim(),
-        subject: text(student.subject, 100).trim(),
+        subject: defaultSubject,
+        subjects,
+        defaultSubject,
         phone: text(student.phone, 100).trim(),
         contactNote: text(student.contactNote, 500).trim(),
         billingType,
         totalLessons: billingType === "perLesson" ? null : Math.max(0, Math.trunc(numberOr(student.totalLessons))),
         usedLessons: Math.max(0, Math.trunc(numberOr(student.usedLessons))),
         pricePerLesson: Math.max(0, numberOr(student.pricePerLesson)),
-        defaultDuration: [30, 45, 60, 90, 120].includes(Number(student.defaultDuration)) ? Number(student.defaultDuration) : 60,
+        defaultDuration: normalizeDuration(student.defaultDuration),
         notes: text(student.notes, 2000),
         isDemoData: Boolean(student.isDemoData),
         createdAt: text(student.createdAt || now, 50),
@@ -226,6 +263,22 @@
         isDemoData: Boolean(lesson.isDemoData),
         startedAt: lesson.startedAt ? text(lesson.startedAt, 50) : null,
         recordId: lesson.recordId && SAFE_ID.test(String(lesson.recordId)) ? String(lesson.recordId) : null,
+        autoCompletedAt: lesson.autoCompletedAt ? text(lesson.autoCompletedAt, 50) : null,
+        completionSource: ["system", "teacher"].includes(lesson.completionSource) ? lesson.completionSource : null,
+        rescheduleHistory: Array.isArray(lesson.rescheduleHistory) ? lesson.rescheduleHistory.slice(-100).map(entry => ({
+          from: {
+            date: isRealISODate(entry?.from?.date) ? entry.from.date : lesson.date,
+            startTime: CLOCK_TIME.test(String(entry?.from?.startTime || "")) ? entry.from.startTime : lesson.startTime,
+            endTime: CLOCK_TIME.test(String(entry?.from?.endTime || "")) ? entry.from.endTime : lesson.endTime,
+          },
+          to: {
+            date: isRealISODate(entry?.to?.date) ? entry.to.date : lesson.date,
+            startTime: CLOCK_TIME.test(String(entry?.to?.startTime || "")) ? entry.to.startTime : lesson.startTime,
+            endTime: CLOCK_TIME.test(String(entry?.to?.endTime || "")) ? entry.to.endTime : lesson.endTime,
+          },
+          changedAt: text(entry?.changedAt || now, 50),
+          scope: ["only", "later", "series"].includes(entry?.scope) ? entry.scope : "only",
+        })) : [],
         createdAt: text(lesson.createdAt || now, 50),
         updatedAt: text(lesson.updatedAt || now, 50),
       };
@@ -250,6 +303,7 @@
         studentId,
         status: LESSON_STATUSES.has(record.status) ? record.status : "completed",
         deductLesson: Boolean(record.deductLesson),
+        autoCompleted: Boolean(record.autoCompleted),
         note: text(record.note, 2000),
         deletedAt: record.deletedAt ? text(record.deletedAt, 50) : null,
         isDemoData: Boolean(record.isDemoData),
@@ -307,7 +361,7 @@
     return {
       ...data,
       dataVersion: DATA_VERSION,
-      version: "0.7.0",
+      version: "0.8.1",
       teacherProfile: {
         name: text(teacherSource.name || "林老師", 100).trim() || "林老師",
         phone: text(teacherSource.phone, 100).trim(),
@@ -318,7 +372,7 @@
           : [],
         defaultLessonMode: teacherSource.defaultLessonMode === "online" ? "online" : (teacherSource.defaultLessonMode === "inPerson" ? "inPerson" : ""),
         defaultLocation: text(teacherSource.defaultLocation, 500),
-        defaultDuration: [30, 45, 60, 90, 120].includes(Number(teacherSource.defaultDuration)) ? Number(teacherSource.defaultDuration) : 60,
+        defaultDuration: normalizeDuration(teacherSource.defaultDuration),
         note: text(teacherSource.note, 2000),
         updatedAt: text(teacherSource.updatedAt, 50),
       },
@@ -331,6 +385,19 @@
           ? settingsSource.hasCompletedOnboarding
           : defaults.hasCompletedOnboarding,
         onboardingVersion: Math.max(0, Math.trunc(numberOr(settingsSource.onboardingVersion, defaults.onboardingVersion))),
+        onboardingCurrentStep: Math.min(5, Math.max(1, Math.trunc(numberOr(
+          settingsSource.onboardingCurrentStep,
+          Number(settingsSource.onboardingVersion || 0) < ONBOARDING_VERSION ? 1 : defaults.onboardingCurrentStep
+        )))),
+        contextualTips: {
+          ...defaults.contextualTips,
+          ...(settingsSource.contextualTips && typeof settingsSource.contextualTips === "object" ? settingsSource.contextualTips : {}),
+        },
+        notifications: {
+          ...defaults.notifications,
+          ...(settingsSource.notifications && typeof settingsSource.notifications === "object" ? settingsSource.notifications : {}),
+          lastCreditReminderDate: text(settingsSource.notifications?.lastCreditReminderDate, 10),
+        },
         update: {
           ...defaults.update,
           ...(settingsSource.update && typeof settingsSource.update === "object" ? settingsSource.update : {}),
@@ -405,13 +472,17 @@
     const lesson = (data.lessons || []).find(item => item.id === options.lessonId && !item.deletedAt);
     if (!lesson) throw new Error("找不到課程");
     const status = LESSON_STATUSES.has(options.status) ? options.status : "completed";
-    const requestedDeduction = lesson.lessonType !== "trial" && Boolean(options.deductLesson);
     const student = (data.students || []).find(item => item.id === lesson.studentId);
     if (lesson.lessonType !== "trial" && !student) throw new Error("找不到學生資料");
+    const requestedDeduction = lesson.lessonType !== "trial"
+      && student?.billingType === "package"
+      && Boolean(options.deductLesson);
     const now = options.now || new Date().toISOString();
     const idFactory = requireIdFactory(options);
+    if (!data.lessonRecords) data.lessonRecords = [];
     let record = (data.lessonRecords || []).find(item => item.lessonId === lesson.id && !item.deletedAt);
     const previousDeduction = Boolean(record?.deductLesson);
+    const systemCompletion = options.completionSource === "system";
 
     if (requestedDeduction && !previousDeduction && student?.billingType === "package") {
       if (creditBalance(data, student.id) <= 0) throw new Error("此學生已沒有剩餘堂數，請先新增堂數或關閉扣堂");
@@ -461,6 +532,7 @@
       record.status = status;
       record.deductLesson = requestedDeduction;
       record.note = text(options.note, 2000);
+      record.autoCompleted = systemCompletion;
       record.updatedAt = now;
     } else {
       record = {
@@ -469,6 +541,7 @@
         studentId: lesson.studentId,
         status,
         deductLesson: requestedDeduction,
+        autoCompleted: systemCompletion,
         note: text(options.note, 2000),
         deletedAt: null,
         recordedAt: now,
@@ -481,11 +554,100 @@
     lesson.recordId = record.id;
     lesson.updatedAt = now;
     lesson.notes = text(options.note || lesson.notes, 2000);
+    lesson.autoCompletedAt = systemCompletion ? now : null;
+    lesson.completionSource = systemCompletion ? "system" : "teacher";
     if (student) {
       syncStudentUsedLessons(data, student.id);
       student.updatedAt = now;
     }
     return { lesson, record };
+  }
+
+  function lessonEndTimestamp(lesson) {
+    if (!lesson || !isRealISODate(lesson.date) || !CLOCK_TIME.test(String(lesson.endTime || ""))) return NaN;
+    return new Date(`${lesson.date}T${lesson.endTime}:00`).getTime();
+  }
+
+  function autoCompleteOverdueLessons(data, options = {}) {
+    const nowValue = options.now || new Date().toISOString();
+    const nowTimestamp = new Date(nowValue).getTime();
+    if (!Number.isFinite(nowTimestamp)) throw new Error("自動完成檢查時間格式錯誤");
+    const idFactory = requireIdFactory(options);
+    const completed = [];
+    const attentionStudentIds = new Set();
+    for (const lesson of (data.lessons || [])) {
+      if (lesson.deletedAt || !["scheduled", "inProgress"].includes(lesson.status)) continue;
+      const endTimestamp = lessonEndTimestamp(lesson);
+      if (!Number.isFinite(endTimestamp) || endTimestamp > nowTimestamp) continue;
+      const student = (data.students || []).find(item => item.id === lesson.studentId);
+      const shouldDeduct = lesson.lessonType !== "trial"
+        && student?.billingType === "package"
+        && creditBalance(data, student.id) > 0;
+      if (lesson.lessonType !== "trial" && student?.billingType === "package" && !shouldDeduct) {
+        attentionStudentIds.add(student.id);
+      }
+      const result = completeLessonTransaction(data, {
+        lessonId: lesson.id,
+        status: "completed",
+        deductLesson: shouldDeduct,
+        note: lesson.notes || "",
+        completionSource: "system",
+        idFactory,
+        now: nowValue,
+      });
+      completed.push({ ...result, deducted: shouldDeduct });
+    }
+    return {
+      changed: completed.length > 0,
+      completed,
+      completedCount: completed.length,
+      attentionStudentIds: [...attentionStudentIds],
+    };
+  }
+
+  function rescheduleLessonTransaction(data, options) {
+    const lesson = (data.lessons || []).find(item => item.id === options.lessonId && !item.deletedAt);
+    if (!lesson) throw new Error("找不到課程");
+    const nextDate = String(options.date || "");
+    const nextStartTime = String(options.startTime || "");
+    const nextEndTime = String(options.endTime || "");
+    if (!isRealISODate(nextDate)) throw new Error("改期日期格式錯誤");
+    if (!CLOCK_TIME.test(nextStartTime) || !CLOCK_TIME.test(nextEndTime) || timeToMinutes(nextStartTime) >= timeToMinutes(nextEndTime)) {
+      throw new Error("改期結束時間必須晚於開始時間");
+    }
+    const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    const previous = { date: lesson.date, startTime: lesson.startTime, endTime: lesson.endTime };
+    const record = (data.lessonRecords || []).find(item => item.lessonId === lesson.id && !item.deletedAt);
+    if (record) {
+      completeLessonTransaction(data, {
+        lessonId: lesson.id,
+        status: "rescheduled",
+        deductLesson: false,
+        note: record.note || lesson.notes || "",
+        completionSource: "teacher",
+        idFactory,
+        now,
+      });
+      record.status = "rescheduled";
+      record.autoCompleted = false;
+    }
+    lesson.rescheduleHistory = Array.isArray(lesson.rescheduleHistory) ? lesson.rescheduleHistory : [];
+    lesson.rescheduleHistory.push({
+      from: previous,
+      to: { date: nextDate, startTime: nextStartTime, endTime: nextEndTime },
+      changedAt: now,
+      scope: ["only", "later", "series"].includes(options.scope) ? options.scope : "only",
+    });
+    lesson.date = nextDate;
+    lesson.startTime = nextStartTime;
+    lesson.endTime = nextEndTime;
+    lesson.status = "scheduled";
+    lesson.startedAt = null;
+    lesson.autoCompletedAt = null;
+    lesson.completionSource = null;
+    lesson.updatedAt = now;
+    return { lesson, record, previous };
   }
 
   function deleteLessonTransaction(data, options) {
@@ -595,8 +757,10 @@
     SAFE_ID,
     ISO_DATE,
     CLOCK_TIME,
+    PRESET_DURATIONS,
     addCreditTransaction,
     addDaysISO,
+    autoCompleteOverdueLessons,
     creditBalance,
     dateToISO,
     defaultSettings,
@@ -606,10 +770,13 @@
     intervalsOverlap,
     isRealISODate,
     normalizeData,
+    normalizeDuration,
+    normalizeSubjects,
     planRecurrence,
     removeDemoData,
     reverseCreditTransaction,
     restoreLessonTransaction,
+    rescheduleLessonTransaction,
     sanitizeCsvCell,
     timeToMinutes,
     syncStudentUsedLessons,

@@ -34,13 +34,15 @@ const checks = [
   [java.includes("ERROR_INSUFFICIENT_SPACE"), "insufficient storage handling"],
   [java.includes("installerLaunched"), "cancelled installer recovery state"],
   [manifest.includes("REQUEST_INSTALL_PACKAGES"), "package install permission"],
+  [manifest.includes("POST_NOTIFICATIONS"), "Android notification permission"],
   [manifest.includes('android:allowBackup="true"'), "Android app data preservation"],
   [gradle.includes("XIAOKEBIAO_APPLICATION_ID"), "explicit applicationId configuration"],
   [gradle.includes('permanentApplicationId = "io.github.lobster0213.xiaokebiao"'), "confirmed permanent applicationId"],
   [workflow.includes("ANDROID_KEYSTORE_BASE64"), "release signing secrets"],
   [workflow.includes("xiaokebiao-v${VERSION_NAME}-release.apk"), "release-only APK name"],
   [workflow.includes("--prerelease"), "prerelease tag handling"],
-  [gradleProperties.includes("XIAOKEBIAO_VERSION_CODE=7001"), "stable versionCode newer than installed RC"],
+  [gradleProperties.includes("XIAOKEBIAO_VERSION_CODE=8001"), "v0.8.1 versionCode"],
+  [java.includes("showCreditReminder"), "daily credit reminder bridge"],
 ];
 
 for (const [passed, label] of checks) {
