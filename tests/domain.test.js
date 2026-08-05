@@ -33,7 +33,7 @@ function legacyData() {
 test("legacy data migrates idempotently to v0.8 without changing the storage key model", () => {
   const first = domain.normalizeData(legacyData(), { now: "2026-07-31T00:00:00.000Z" });
   assert.equal(first.dataVersion, 8);
-  assert.equal(first.version, "0.8.0");
+  assert.equal(first.version, "0.8.1");
   assert.equal(first.lessons[0].lessonType, "formal");
   assert.equal(first.lessons[0].deletedAt, null);
   assert.deepEqual(first.students[0].subjects, ["數學"]);

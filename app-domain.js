@@ -361,7 +361,7 @@
     return {
       ...data,
       dataVersion: DATA_VERSION,
-      version: "0.8.0",
+      version: "0.8.1",
       teacherProfile: {
         name: text(teacherSource.name || "林老師", 100).trim() || "林老師",
         phone: text(teacherSource.phone, 100).trim(),
