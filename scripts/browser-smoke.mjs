@@ -1,12 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const port = process.env.CHROME_DEBUG_PORT || "9333";
-const targetUrl = process.argv[2];
-const screenshotPath = process.argv[3];
-if (!targetUrl || !screenshotPath) {
-  throw new Error("Usage: node scripts/browser-smoke.mjs <url> <screenshot-path>");
-}
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const targetUrl = process.argv[2] || pathToFileURL(path.join(projectRoot, "index.html")).href;
+const screenshotPath = process.argv[3] || path.join(projectRoot, "docs", "v0.8-browser-smoke-390x844.png");
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 let targets;
@@ -82,7 +81,7 @@ await command("Emulation.setUserAgentOverride", {
 });
 await command("Page.navigate", { url: targetUrl });
 for (let attempt = 0; attempt < 30; attempt += 1) {
-  const ready = await evaluate(`location.href === ${JSON.stringify(targetUrl)} && document.readyState === 'complete' && Boolean(document.querySelector('.sheet-header h2'))`);
+  const ready = await evaluate(`location.href === ${JSON.stringify(targetUrl)} && document.readyState === 'complete' && Boolean(document.querySelector('.tour-card'))`);
   if (ready) break;
   await delay(100);
 }
@@ -91,15 +90,24 @@ const initial = await evaluate(`({
   width: innerWidth,
   height: innerHeight,
   scrollWidth: document.documentElement.scrollWidth,
-  onboarding: document.querySelector('.sheet-header h2')?.textContent || ''
+  onboarding: document.querySelector('.tour-card')?.getAttribute('aria-label') || ''
 })`);
 if (initial.width !== 390 || initial.scrollWidth > 390) throw new Error(`Mobile viewport overflow: ${JSON.stringify(initial)}`);
-if (!initial.onboarding.includes("1/4")) throw new Error("First-run onboarding did not open");
+if (!initial.onboarding.includes("1/5")) throw new Error("Five-step first-run onboarding did not open");
 
-await click("#onboarding-next");
-await click("#onboarding-next");
-await click("#onboarding-keep");
-await click("#onboarding-finish");
+for (let step = 0; step < 5; step += 1) await click("#tour-next");
+const home = await evaluate(`({
+  headings: [...document.querySelectorAll('.section-heading h2')].map(item => item.textContent),
+  hasSummaryBar: Boolean(document.querySelector('.summary-bar')),
+  hasDirectAddLesson: Boolean(document.querySelector('[data-action="add-lesson"]'))
+})`);
+if (!home.headings.includes("下一堂課") || !home.headings.includes("今日課程") || home.hasSummaryBar || home.hasDirectAddLesson) {
+  throw new Error(`Home hierarchy regression: ${JSON.stringify(home)}`);
+}
+const homeScreenshotPath = screenshotPath.replace(/\.png$/i, "-home.png");
+const homeScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+fs.mkdirSync(path.dirname(homeScreenshotPath), { recursive: true });
+fs.writeFileSync(homeScreenshotPath, Buffer.from(homeScreenshot.data, "base64"));
 await click('[data-tab="schedule"]');
 
 const week = await evaluate(`({
@@ -118,6 +126,8 @@ fs.writeFileSync(weekScreenshotPath, Buffer.from(weekScreenshot.data, "base64"))
 await click('[data-calendar-view="month"]');
 const monthDays = await evaluate("document.querySelectorAll('.month-day').length");
 if (monthDays !== 42) throw new Error(`Month grid expected 42 cells, got ${monthDays}`);
+const monthCounts = await evaluate("document.querySelectorAll('.month-count').length");
+if (monthCounts < 1) throw new Error("Month cells do not expose daily lesson counts");
 
 await click('[data-action="add-calendar-lesson"]');
 await click('input[name="lessonType"][value="trial"]');
@@ -129,6 +139,16 @@ const trialVisible = await evaluate(`({
 if (trialVisible.formal !== "none" || trialVisible.trial === "none" || trialVisible.repeat !== "none") {
   throw new Error(`Trial form visibility regression: ${JSON.stringify(trialVisible)}`);
 }
+await evaluate(`(() => {
+  const start = document.querySelector('#start-time');
+  const duration = document.querySelector('#lesson-duration');
+  start.value = '20:00';
+  start.dispatchEvent(new Event('change', { bubbles: true }));
+  duration.value = '90';
+  duration.dispatchEvent(new Event('change', { bubbles: true }));
+})()`);
+const calculatedEnd = await evaluate("document.querySelector('#end-time').value");
+if (calculatedEnd !== "21:30") throw new Error(`Duration auto-calculation failed: ${calculatedEnd}`);
 await click('[data-action="close-sheet"]');
 
 await click('[data-tab="more"]');
@@ -144,5 +164,5 @@ fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
 fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
 
 if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
-console.log(JSON.stringify({ initial, week, monthDays, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
+console.log(JSON.stringify({ initial, home, week, monthDays, monthCounts, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
 socket.close();
