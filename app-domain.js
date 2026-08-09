@@ -549,6 +549,64 @@
     return options.idFactory;
   }
 
+  function lessonSortKey(lesson) {
+    return `${lesson.date}T${lesson.startTime}`;
+  }
+
+  function isCompletedLesson(data, lesson) {
+    const record = (data.lessonRecords || []).find(item => item.lessonId === lesson.id && !item.deletedAt);
+    return lesson.status === "completed" || Boolean(record && record.status === "completed");
+  }
+
+  function seriesLessons(data, options) {
+    const anchor = (data.lessons || []).find(item => item.id === options.lessonId && !item.deletedAt);
+    if (!anchor) throw new Error("找不到課程");
+    const scope = ["only", "later", "series"].includes(options.scope) ? options.scope : "only";
+    if (scope === "only" || !anchor.recurrenceGroupId) return [anchor];
+    const anchorKey = lessonSortKey(anchor);
+    return (data.lessons || [])
+      .filter(item => !item.deletedAt && item.recurrenceGroupId === anchor.recurrenceGroupId)
+      .filter(item => scope !== "later" || lessonSortKey(item) >= anchorKey)
+      .filter(item => options.includeCompleted === true || !isCompletedLesson(data, item))
+      .sort((first, second) => lessonSortKey(first).localeCompare(lessonSortKey(second)));
+  }
+
+  function seriesSummary(data, lessonId) {
+    const anchor = (data.lessons || []).find(item => item.id === lessonId && !item.deletedAt);
+    if (!anchor) throw new Error("找不到課程");
+    const lessons = anchor.recurrenceGroupId
+      ? (data.lessons || []).filter(item => !item.deletedAt && item.recurrenceGroupId === anchor.recurrenceGroupId)
+      : [anchor];
+    const completed = lessons.filter(item => isCompletedLesson(data, item));
+    const deducted = completed.filter(item => (data.lessonRecords || []).some(record => record.lessonId === item.id && !record.deletedAt && record.deductLesson));
+    return {
+      recurrenceGroupId: anchor.recurrenceGroupId,
+      total: lessons.length,
+      completed: completed.length,
+      upcoming: lessons.length - completed.length,
+      deducted: deducted.length,
+    };
+  }
+
+  function createBatchOperation(data, options) {
+    const idFactory = requireIdFactory(options);
+    const now = options.now || new Date().toISOString();
+    const operation = {
+      id: options.batchOperationId || idFactory("batch"),
+      type: BATCH_OPERATION_TYPES.has(options.type) ? options.type : "edit",
+      affectedLessonIds: [...new Set(options.affectedLessonIds || [])],
+      recurrenceGroupId: options.recurrenceGroupId || null,
+      createdAt: now,
+      undoUntil: options.undoUntil || new Date(new Date(now).getTime() + 8000).toISOString(),
+      undoneAt: null,
+      before: options.before ? clone(options.before) : null,
+    };
+    assertSafeId(operation.id, "批次操作");
+    if (!data.batchOperations) data.batchOperations = [];
+    data.batchOperations.push(operation);
+    return operation;
+  }
+
   function deductionForStatus(data, studentId, status) {
     if (status === "completed") return true;
     if (!["studentLeave", "absent"].includes(status)) return false;
@@ -790,6 +848,7 @@
           amount: 1,
           reason: "刪除已扣堂課程並加回",
           relatedLessonId: lesson.id,
+          batchOperationId: options.batchOperationId || null,
           createdAt: now,
           isDemoData: Boolean(lesson.isDemoData),
         }).transaction;
@@ -802,6 +861,7 @@
       creditRestored: Boolean(restoredTransactionId),
       restorationTransactionId: restoredTransactionId,
       deletedAt: now,
+      batchOperationId: options.batchOperationId || null,
     };
     if (record) {
       record.deletedAt = now;
@@ -812,6 +872,36 @@
       student.updatedAt = now;
     }
     return { lesson, record, restoredTransactionId };
+  }
+
+  function batchDeleteLessons(data, options) {
+    const targets = seriesLessons(data, options);
+    if (!targets.length) throw new Error("沒有符合條件的課程可刪除");
+    const idFactory = requireIdFactory(options);
+    const now = options.now || new Date().toISOString();
+    const batchOperationId = options.batchOperationId || idFactory("batch");
+    const results = targets.map(lesson => deleteLessonTransaction(data, {
+      lessonId: lesson.id,
+      restoreCredit: options.restoreCredits === true,
+      batchOperationId,
+      idFactory,
+      now,
+    }));
+    const operation = createBatchOperation(data, {
+      ...options,
+      batchOperationId,
+      type: "delete",
+      recurrenceGroupId: targets[0].recurrenceGroupId,
+      affectedLessonIds: targets.map(item => item.id),
+      now,
+    });
+    return {
+      operation,
+      results,
+      deletedCount: targets.length,
+      completedCount: targets.filter(item => isCompletedLesson(data, item)).length,
+      restoredCreditCount: results.filter(item => item.restoredTransactionId).length,
+    };
   }
 
   function restoreLessonTransaction(data, options) {
@@ -835,6 +925,38 @@
       student.updatedAt = now;
     }
     return { lesson, record };
+  }
+
+  function undoBatchOperation(data, options) {
+    const operation = (data.batchOperations || []).find(item => item.id === options.batchOperationId);
+    if (!operation) throw new Error("找不到這次批次操作");
+    if (operation.undoneAt) throw new Error("這次批次操作已復原");
+    const now = options.now || new Date().toISOString();
+    if (new Date(now).getTime() > new Date(operation.undoUntil).getTime()) throw new Error("復原期限已過");
+    if (operation.type === "delete") {
+      for (const lessonId of operation.affectedLessonIds) {
+        const lesson = (data.lessons || []).find(item => item.id === lessonId);
+        if (lesson?.deletedAt && lesson.deletion?.batchOperationId === operation.id) {
+          restoreLessonTransaction(data, { lessonId, now });
+        }
+      }
+    } else if (["add", "create"].includes(operation.type)) {
+      const targetIds = new Set(operation.affectedLessonIds);
+      data.lessons = (data.lessons || []).filter(item => !targetIds.has(item.id));
+      data.lessonRecords = (data.lessonRecords || []).filter(item => !targetIds.has(item.lessonId));
+      data.lessonCreditTransactions = (data.lessonCreditTransactions || []).filter(item => !targetIds.has(item.relatedLessonId));
+    } else if (operation.before?.lessons) {
+      const beforeLessons = new Map(operation.before.lessons.map(item => [item.id, clone(item)]));
+      data.lessons = (data.lessons || []).map(item => beforeLessons.get(item.id) || item);
+      if (Array.isArray(operation.before.records)) {
+        const beforeRecords = new Map(operation.before.records.map(item => [item.id, clone(item)]));
+        data.lessonRecords = (data.lessonRecords || []).map(item => beforeRecords.get(item.id) || item);
+      }
+    }
+    operation.undoneAt = now;
+    const studentIds = new Set((data.lessons || []).filter(item => operation.affectedLessonIds.includes(item.id)).map(item => item.studentId));
+    studentIds.forEach(studentId => syncStudentUsedLessons(data, studentId));
+    return { operation, restoredCount: operation.affectedLessonIds.length };
   }
 
   function removeDemoData(data) {
@@ -878,6 +1000,7 @@
     addCreditTransaction,
     addDaysISO,
     autoCompleteOverdueLessons,
+    batchDeleteLessons,
     creditBalance,
     dateToISO,
     deductionForStatus,
@@ -898,8 +1021,11 @@
     restoreLessonTransaction,
     rescheduleLessonTransaction,
     sanitizeCsvCell,
+    seriesLessons,
+    seriesSummary,
     timeToMinutes,
     syncStudentUsedLessons,
+    undoBatchOperation,
     weekdayNumber,
   };
 });

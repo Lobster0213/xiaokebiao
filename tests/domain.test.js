@@ -383,3 +383,57 @@ test("rescheduling an auto-completed lesson restores credit and records history"
   assert.equal(data.lessons[0].rescheduleHistory.length, 1);
   assert.equal(domain.creditBalance(data, "student_1"), 6);
 });
+
+test("series deletion supports later scope, credit restoration and exact batch undo", () => {
+  const payload = legacyData();
+  payload.lessons = [
+    { ...payload.lessons[0], id: "series_1", date: "2026-08-06", recurrenceGroupId: "group_1", status: "completed", recordId: "record_1" },
+    { ...payload.lessons[0], id: "series_2", date: "2026-08-13", recurrenceGroupId: "group_1" },
+    { ...payload.lessons[0], id: "series_3", date: "2026-08-20", recurrenceGroupId: "group_1" },
+    { ...payload.lessons[0], id: "other_1", date: "2026-08-20", recurrenceGroupId: "group_2" },
+  ];
+  payload.lessonRecords = [{
+    id: "record_1", lessonId: "series_1", studentId: "student_1", status: "completed", deductLesson: true,
+    recordedAt: "2026-08-06T13:00:00.000Z", updatedAt: "2026-08-06T13:00:00.000Z",
+  }];
+  payload.lessonCreditTransactions = [
+    { id: "opening_1", studentId: "student_1", type: "purchase", amount: 10, createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "deduction_1", studentId: "student_1", type: "deduction", amount: -1, relatedLessonId: "series_1", createdAt: "2026-08-06T13:00:00.000Z" },
+  ];
+  const data = domain.normalizeData(payload, { now: "2026-08-10T00:00:00.000Z" });
+  let sequence = 0;
+  const idFactory = prefix => `${prefix}_batch_${++sequence}`;
+  const later = domain.batchDeleteLessons(data, {
+    lessonId: "series_2", scope: "later", includeCompleted: false, restoreCredits: true,
+    idFactory, now: "2026-08-10T00:00:00.000Z",
+  });
+  assert.equal(later.deletedCount, 2);
+  assert.equal(data.lessons.find(item => item.id === "series_1").deletedAt, null);
+  assert.ok(data.lessons.find(item => item.id === "series_2").deletedAt);
+  assert.equal(data.lessons.find(item => item.id === "other_1").deletedAt, null);
+  domain.undoBatchOperation(data, { batchOperationId: later.operation.id, now: "2026-08-10T00:00:07.000Z" });
+  assert.equal(data.lessons.find(item => item.id === "series_2").deletedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "series_3").deletedAt, null);
+
+  const whole = domain.batchDeleteLessons(data, {
+    lessonId: "series_2", scope: "series", includeCompleted: true, restoreCredits: true,
+    idFactory, now: "2026-08-10T00:01:00.000Z",
+  });
+  assert.equal(whole.deletedCount, 3);
+  assert.equal(whole.restoredCreditCount, 1);
+  assert.equal(domain.creditBalance(data, "student_1"), 10);
+  assert.equal(data.lessons.find(item => item.id === "other_1").deletedAt, null);
+  domain.undoBatchOperation(data, { batchOperationId: whole.operation.id, now: "2026-08-10T00:01:07.000Z" });
+  assert.equal(domain.creditBalance(data, "student_1"), 9);
+  assert.ok(data.lessonCreditTransactions.find(item => item.type === "restoration" && item.relatedLessonId === "series_1").reversedAt);
+});
+
+test("batch undo expires after eight seconds", () => {
+  const data = domain.normalizeData(legacyData(), { now: "2026-08-10T00:00:00.000Z" });
+  const result = domain.batchDeleteLessons(data, {
+    lessonId: "lesson_1", scope: "only", idFactory: prefix => `${prefix}_expiry`, now: "2026-08-10T00:00:00.000Z",
+  });
+  assert.throws(() => domain.undoBatchOperation(data, {
+    batchOperationId: result.operation.id, now: "2026-08-10T00:00:09.000Z",
+  }), /復原期限已過/);
+});

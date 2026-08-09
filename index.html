@@ -2165,10 +2165,12 @@ textarea { min-height: 96px; resize: vertical; }
     if (!lesson) return;
     const student = lessonDisplayPerson(lesson);
     const place = lesson.location || (lesson.mode === "online" ? "線上" : "未填地點");
+    const series = lesson.recurrenceGroupId ? Domain.seriesSummary(state, lesson.id) : null;
     openSheet("課程操作", `
       <section class="detail-hero">
         <div class="record-row"><div><h3 style="margin:0 0 5px">${escapeHtml(student.name)} · ${escapeHtml(lesson.subject)}</h3><div class="lesson-meta">${formatDate(lesson.date)} · ${escapeHtml(lesson.startTime)}–${escapeHtml(lesson.endTime)}</div></div>${statusBadge(lesson.status)}</div>
         <p class="lesson-meta" style="margin:12px 0 0">${lesson.mode === "online" ? "線上" : "實體"} · ${escapeHtml(place)}</p>
+        ${series ? `<div class="repeat-summary" style="margin-top:12px"><strong>固定課程系列</strong><br>共 ${series.total} 堂 · 已完成 ${series.completed} 堂 · 尚未完成 ${series.upcoming} 堂</div>` : ""}
         ${lesson.lessonType === "trial" ? `<p class="lesson-meta" style="margin:7px 0 0">試教結果：${escapeHtml(TRIAL_RESULT_LABELS[lesson.trial?.result] || "待確認")}${lesson.trial?.source ? ` · 來源：${escapeHtml(lesson.trial.source)}` : ""}${lesson.trial?.fee ? ` · ${money(lesson.trial.fee)}` : ""}</p>` : ""}
         ${lesson.notes ? `<p class="lesson-meta" style="margin:7px 0 0">備註：${escapeHtml(lesson.notes)}</p>` : ""}
         ${lesson.autoCompletedAt ? `<div class="context-tip" style="margin-top:12px">由系統於 ${escapeHtml(new Date(lesson.autoCompletedAt).toLocaleString("zh-TW"))} 自動完成。若實際為請假、缺席、取消或需要改期，可在下方修改紀錄，堂數會自動對帳。</div>` : ""}
@@ -2194,6 +2196,17 @@ textarea { min-height: 96px; resize: vertical; }
       toast("課程與相關堂數已復原");
     } catch (error) {
       toast(error.message || "無法復原課程", "error");
+    }
+  }
+
+  function undoBatchOperation(batchOperationId) {
+    try {
+      const result = Domain.undoBatchOperation(state, { batchOperationId, now: new Date().toISOString() });
+      saveData();
+      render();
+      toast(`已復原本次操作，共 ${result.restoredCount} 堂`);
+    } catch (error) {
+      toast(error.message || "無法復原本次操作", "error");
     }
   }
 
@@ -2235,6 +2248,85 @@ textarea { min-height: 96px; resize: vertical; }
             toast("課程已刪除", "success", {
               duration: 8000,
               actions: [{ label: "復原", handler: () => restoreDeletedLesson(lesson.id) }],
+            });
+          } catch (error) {
+            submitting = false;
+            button.disabled = false;
+            toast(error.message || "刪除課程失敗", "error");
+          }
+        });
+      });
+  }
+
+  function deleteSeriesLessonSheet(lesson) {
+    if (!lesson || lesson.deletedAt) return;
+    const summary = Domain.seriesSummary(state, lesson.id);
+    const hasSeries = Boolean(lesson.recurrenceGroupId && summary.total > 1);
+    markContextTip("deleteAndRestoreCredit");
+    openSheet(hasSeries ? "刪除固定課程" : "刪除課程", `
+      <form id="series-delete-form" class="form-grid">
+        <div class="warning"><strong>刪除會從一般課表移除，與「取消課程」不同。</strong><br>完成後 8 秒內可復原這一批，不會影響其他批次。</div>
+        ${hasSeries ? `<div class="repeat-summary"><strong>固定系列</strong><br>共 ${summary.total} 堂；已完成 ${summary.completed} 堂；尚未完成 ${summary.upcoming} 堂。</div>
+        <div class="field"><label>刪除範圍</label><div class="status-options">
+          <label class="status-option"><input type="radio" name="deleteScope" value="only" checked><span data-delete-scope-label="only"></span></label>
+          <label class="status-option"><input type="radio" name="deleteScope" value="later"><span data-delete-scope-label="later"></span></label>
+          <label class="status-option"><input type="radio" name="deleteScope" value="series"><span data-delete-scope-label="series"></span></label>
+        </div></div>
+        <label class="inline-check"><input id="delete-include-completed" name="includeCompleted" type="checkbox"><span>同時包含已完成課程（預設只刪尚未完成）</span></label>` : `<div class="repeat-summary"><strong>${formatDate(lesson.date)} ${escapeHtml(lesson.startTime)}–${escapeHtml(lesson.endTime)}</strong></div><input type="hidden" name="deleteScope" value="only">`}
+        <div id="delete-impact" class="context-tip" aria-live="polite"></div>
+        <div id="delete-credit-choice" class="field" hidden><label>已扣堂數處理方式</label><div class="status-options">
+          <label class="status-option"><input type="radio" name="creditChoice" value="restore" checked><span>刪除並還原已扣堂數</span></label>
+          <label class="status-option"><input type="radio" name="creditChoice" value="keep"><span>刪除但保留堂數紀錄</span></label>
+        </div></div>
+        <div class="sheet-footer"><button class="btn btn-danger btn-full" type="submit">確認刪除</button></div>
+      </form>`, root => {
+        const form = $("#series-delete-form", root);
+        const includeCompleted = $("#delete-include-completed", root);
+        const scopeNames = { only: "僅刪除此堂", later: "刪除此堂及之後", series: "刪除整個固定系列" };
+        const targetsFor = scope => Domain.seriesLessons(state, {
+          lessonId: lesson.id,
+          scope,
+          includeCompleted: includeCompleted?.checked === true,
+        });
+        const updateImpact = () => {
+          const scope = String(new FormData(form).get("deleteScope") || "only");
+          const targets = targetsFor(scope);
+          const completedCount = targets.filter(item => item.status === "completed" || recordByLessonId(item.id)?.status === "completed").length;
+          const deductedCount = targets.filter(item => recordByLessonId(item.id)?.deductLesson).length;
+          $$('[data-delete-scope-label]', root).forEach(label => {
+            const labelScope = label.dataset.deleteScopeLabel;
+            label.textContent = `${scopeNames[labelScope]}，共 ${targetsFor(labelScope).length} 堂`;
+          });
+          $("#delete-impact", root).innerHTML = `本次將刪除 <strong>${targets.length}</strong> 堂；其中已完成 ${completedCount} 堂、曾扣堂 ${deductedCount} 堂。`;
+          $("#delete-credit-choice", root).hidden = deductedCount === 0;
+          $('button[type="submit"]', form).disabled = targets.length === 0;
+        };
+        $$('input[name="deleteScope"]', root).forEach(input => input.addEventListener("change", updateImpact));
+        includeCompleted?.addEventListener("change", updateImpact);
+        updateImpact();
+        let submitting = false;
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          if (submitting) return;
+          submitting = true;
+          const button = $('button[type="submit"]', form);
+          button.disabled = true;
+          try {
+            const fd = new FormData(form);
+            const result = Domain.batchDeleteLessons(state, {
+              lessonId: lesson.id,
+              scope: String(fd.get("deleteScope") || "only"),
+              includeCompleted: includeCompleted?.checked === true,
+              restoreCredits: fd.get("creditChoice") !== "keep",
+              idFactory: uid,
+              now: new Date().toISOString(),
+            });
+            saveData();
+            closeSheet();
+            render();
+            toast(`已刪除 ${result.deletedCount} 堂${hasSeries ? "固定" : ""}課程`, "success", {
+              duration: 8000,
+              actions: [{ label: "復原", handler: () => undoBatchOperation(result.operation.id) }],
             });
           } catch (error) {
             submitting = false;
@@ -3438,7 +3530,7 @@ textarea { min-height: 96px; resize: vertical; }
       lessonForm(null, null, null, { date, startTime: actionEl.dataset.startTime || null });
     }
     else if (action === "course-detail") courseDetailSheet(lessonById(id));
-    else if (action === "delete-lesson") deleteLessonSheet(lessonById(id));
+    else if (action === "delete-lesson") deleteSeriesLessonSheet(lessonById(id));
     else if (action === "convert-trial") convertTrialSheet(lessonById(id));
     else if (action === "edit-lesson") lessonForm(lessonById(id));
     else if (action === "reschedule-lesson") lessonForm(lessonById(id), null, null, { reschedule: true });
