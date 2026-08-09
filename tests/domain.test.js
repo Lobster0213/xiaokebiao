@@ -437,3 +437,48 @@ test("batch undo expires after eight seconds", () => {
     batchOperationId: result.operation.id, now: "2026-08-10T00:00:09.000Z",
   }), /復原期限已過/);
 });
+
+test("series batch edit previews counts, skips conflicts and can undo only changed lessons", () => {
+  const payload = legacyData();
+  payload.lessons = [
+    { ...payload.lessons[0], id: "edit_1", date: "2026-08-06", recurrenceGroupId: "edit_group" },
+    { ...payload.lessons[0], id: "edit_2", date: "2026-08-13", recurrenceGroupId: "edit_group" },
+    { ...payload.lessons[0], id: "edit_3", date: "2026-08-20", recurrenceGroupId: "edit_group" },
+    { ...payload.lessons[0], id: "block_1", date: "2026-08-13", startTime: "19:30", endTime: "20:30", recurrenceGroupId: null },
+  ];
+  const data = domain.normalizeData(payload, { now: "2026-08-01T00:00:00.000Z" });
+  const preview = domain.previewSeriesEdit(data, {
+    lessonId: "edit_1", scope: "series", changes: { startTime: "19:30", duration: 60, subject: "物理", location: "老師家" }, conflictStrategy: "skip",
+  });
+  assert.equal(preview.targets.length, 3);
+  assert.equal(preview.conflicts.length, 1);
+  assert.equal(preview.accepted.length, 2);
+  const result = domain.batchEditSeries(data, {
+    lessonId: "edit_1", scope: "series", changes: { startTime: "19:30", duration: 60, subject: "物理", location: "老師家" }, conflictStrategy: "skip",
+    idFactory: prefix => `${prefix}_edit`, now: "2026-08-01T00:00:00.000Z",
+  });
+  assert.equal(result.updatedCount, 2);
+  assert.equal(result.skippedCount, 1);
+  assert.equal(data.lessons.find(item => item.id === "edit_1").subject, "物理");
+  assert.equal(data.lessons.find(item => item.id === "edit_2").subject, "數學");
+  domain.undoBatchOperation(data, { batchOperationId: result.operation.id, now: "2026-08-01T00:00:07.000Z" });
+  assert.equal(data.lessons.find(item => item.id === "edit_1").subject, "數學");
+  assert.equal(data.lessons.find(item => item.id === "edit_3").startTime, "20:00");
+});
+
+test("series batch edit can supplement a conflicted lesson within 104 weeks", () => {
+  const payload = legacyData();
+  payload.lessons = [
+    { ...payload.lessons[0], id: "supp_1", date: "2026-08-06", recurrenceGroupId: "supp_group" },
+    { ...payload.lessons[0], id: "supp_2", date: "2026-08-13", recurrenceGroupId: "supp_group" },
+    { ...payload.lessons[0], id: "supp_block", date: "2026-08-13", recurrenceGroupId: null },
+  ];
+  const data = domain.normalizeData(payload, { now: "2026-08-01T00:00:00.000Z" });
+  const result = domain.batchEditSeries(data, {
+    lessonId: "supp_1", scope: "series", changes: { subject: "物理" }, conflictStrategy: "supplement",
+    idFactory: prefix => `${prefix}_supp`, now: "2026-08-01T00:00:00.000Z",
+  });
+  assert.equal(result.updatedCount, 2);
+  assert.equal(result.supplementedCount, 1);
+  assert.equal(data.lessons.find(item => item.id === "supp_2").date, "2026-08-20");
+});

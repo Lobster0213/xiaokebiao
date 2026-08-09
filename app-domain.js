@@ -904,6 +904,102 @@
     };
   }
 
+  function minutesToTime(minutes) {
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes >= 24 * 60) throw new Error("課程時間不可跨越午夜");
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  }
+
+  function previewSeriesEdit(data, options) {
+    const targets = seriesLessons(data, options);
+    if (!targets.length) return { targets: [], accepted: [], conflicts: [], supplemented: [], limitReached: false };
+    const changes = options.changes && typeof options.changes === "object" ? options.changes : {};
+    const anchor = targets.find(item => item.id === options.lessonId) || targets[0];
+    let dayDelta = 0;
+    if (isRealISODate(changes.date)) {
+      dayDelta = Math.round((parseISODate(changes.date).getTime() - parseISODate(anchor.date).getTime()) / 86400000);
+    } else if (Number(changes.weekday) >= 1 && Number(changes.weekday) <= 7) {
+      dayDelta = (Number(changes.weekday) - weekdayNumber(anchor.date) + 7) % 7;
+    }
+    const startTime = CLOCK_TIME.test(String(changes.startTime || "")) ? String(changes.startTime) : anchor.startTime;
+    const duration = normalizeDuration(changes.duration, timeToMinutes(anchor.endTime) - timeToMinutes(anchor.startTime));
+    const endTime = minutesToTime(timeToMinutes(startTime) + duration);
+    const targetIds = new Set(targets.map(item => item.id));
+    const occupied = (data.lessons || []).filter(item => !targetIds.has(item.id));
+    const accepted = [];
+    const conflicts = [];
+    for (const lesson of targets) {
+      const candidate = {
+        ...lesson,
+        date: addDaysISO(lesson.date, dayDelta),
+        startTime,
+        endTime,
+        subject: changes.subject == null ? lesson.subject : text(changes.subject, 100).trim(),
+        mode: changes.mode == null ? lesson.mode : (changes.mode === "online" ? "online" : "inPerson"),
+        location: changes.location == null ? lesson.location : text(changes.location, 500).trim(),
+      };
+      const matches = findConflicts(candidate, [...occupied, ...accepted.map(item => item.candidate)], lesson.id);
+      if (matches.length) conflicts.push({ lesson, candidate, conflicts: matches });
+      else accepted.push({ lesson, candidate, supplemented: false });
+    }
+    const strategy = ["return", "skip", "supplement"].includes(options.conflictStrategy) ? options.conflictStrategy : "return";
+    const supplemented = [];
+    let limitReached = false;
+    if (strategy === "supplement" && conflicts.length) {
+      let cursor = targets.reduce((latest, item) => item.date > latest ? item.date : latest, targets[0].date);
+      const horizon = addDaysISO(cursor, Math.min(104, Math.max(1, Math.trunc(numberOr(options.maxWeeks, 104)))) * 7);
+      for (const conflict of conflicts) {
+        let found = null;
+        while (cursor < horizon && !found) {
+          cursor = addDaysISO(cursor, 1);
+          if (weekdayNumber(cursor) !== weekdayNumber(conflict.candidate.date)) continue;
+          const candidate = { ...conflict.candidate, date: cursor };
+          const matches = findConflicts(candidate, [...occupied, ...accepted.map(item => item.candidate), ...supplemented.map(item => item.candidate)], conflict.lesson.id);
+          if (!matches.length) found = { lesson: conflict.lesson, candidate, supplemented: true };
+        }
+        if (found) supplemented.push(found);
+        else limitReached = true;
+      }
+    }
+    return {
+      targets,
+      accepted: strategy === "return" && conflicts.length ? [] : [...accepted, ...supplemented],
+      conflicts,
+      supplemented,
+      limitReached,
+    };
+  }
+
+  function batchEditSeries(data, options) {
+    const plan = previewSeriesEdit(data, options);
+    if (!plan.targets.length) throw new Error("沒有符合條件的課程可修改");
+    if (plan.conflicts.length && (!options.conflictStrategy || options.conflictStrategy === "return")) throw new Error("修改後與既有課程衝突");
+    if (plan.limitReached) throw new Error("104 週內無法補足所有衝突課程");
+    if (!plan.accepted.length) throw new Error("沒有可套用的課程");
+    const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    const batchOperationId = options.batchOperationId || idFactory("batch");
+    const before = { lessons: plan.accepted.map(item => clone(item.lesson)), records: [] };
+    for (const item of plan.accepted) {
+      Object.assign(item.lesson, item.candidate, { batchOperationId, updatedAt: now });
+    }
+    const operation = createBatchOperation(data, {
+      ...options,
+      batchOperationId,
+      type: "edit",
+      recurrenceGroupId: plan.targets[0].recurrenceGroupId,
+      affectedLessonIds: plan.accepted.map(item => item.lesson.id),
+      before,
+      now,
+    });
+    return {
+      operation,
+      plan,
+      updatedCount: plan.accepted.length,
+      skippedCount: options.conflictStrategy === "skip" ? plan.conflicts.length : 0,
+      supplementedCount: plan.supplemented.length,
+    };
+  }
+
   function restoreLessonTransaction(data, options) {
     const lesson = (data.lessons || []).find(item => item.id === options.lessonId && item.deletedAt);
     if (!lesson) throw new Error("找不到已刪除課程");
@@ -1000,6 +1096,7 @@
     addCreditTransaction,
     addDaysISO,
     autoCompleteOverdueLessons,
+    batchEditSeries,
     batchDeleteLessons,
     creditBalance,
     dateToISO,
@@ -1016,6 +1113,7 @@
     normalizeSubjects,
     normalizeTeacherDeductionPolicy,
     planRecurrence,
+    previewSeriesEdit,
     removeDemoData,
     reverseCreditTransaction,
     restoreLessonTransaction,

@@ -2337,6 +2337,105 @@ textarea { min-height: 96px; resize: vertical; }
       });
   }
 
+  function seriesEditSheet(lesson) {
+    if (!lesson?.recurrenceGroupId) { lessonForm(lesson); return; }
+    const summary = Domain.seriesSummary(state, lesson.id);
+    const duration = timeToMinutes(lesson.endTime) - timeToMinutes(lesson.startTime);
+    openSheet("編輯固定課程", `
+      <form id="series-edit-form" class="form-grid" novalidate>
+        <div class="repeat-summary"><strong>固定系列共 ${summary.total} 堂</strong><br>已完成 ${summary.completed} 堂；尚未完成 ${summary.upcoming} 堂。已完成課程預設不跟著整批修改。</div>
+        <div class="field"><label>修改範圍</label><div class="status-options">
+          <label class="status-option"><input type="radio" name="editScope" value="only" checked><span data-edit-scope-label="only">僅此堂</span></label>
+          <label class="status-option"><input type="radio" name="editScope" value="later"><span data-edit-scope-label="later">此堂及之後</span></label>
+          <label class="status-option"><input type="radio" name="editScope" value="series"><span data-edit-scope-label="series">整個系列</span></label>
+        </div></div>
+        <label class="inline-check"><input id="edit-include-completed" type="checkbox"><span>整批修改時也包含已完成課程</span></label>
+        <div class="field" id="series-edit-date-row"><label for="series-edit-date">日期</label><input id="series-edit-date" type="date" value="${lesson.date}"></div>
+        <div class="field" id="series-edit-weekday-row" hidden><label for="series-edit-weekday">固定星期</label><select id="series-edit-weekday">${[1,2,3,4,5,6,7].map(day => `<option value="${day}" ${weekdayNumber(lesson.date) === day ? "selected" : ""}>星期${weekdayName(day)}</option>`).join("")}</select></div>
+        <div class="form-row"><div class="field"><label for="series-edit-start">開始時間</label><input id="series-edit-start" type="time" value="${lesson.startTime}"></div><div class="field"><label for="series-edit-duration">時長（分鐘）</label><input id="series-edit-duration" type="number" min="15" max="360" step="1" value="${duration}"></div></div>
+        <div class="field"><label for="series-edit-subject">科目</label><input id="series-edit-subject" maxlength="100" value="${escapeHtml(lesson.subject)}"></div>
+        <div class="field"><label>形式</label><div class="segmented"><label><input type="radio" name="seriesEditMode" value="inPerson" ${lesson.mode !== "online" ? "checked" : ""}><span>實體</span></label><label><input type="radio" name="seriesEditMode" value="online" ${lesson.mode === "online" ? "checked" : ""}><span>線上</span></label></div></div>
+        <div class="field"><label for="series-edit-location">地點或線上連結</label><input id="series-edit-location" maxlength="500" value="${escapeHtml(lesson.location || "")}"></div>
+        <div class="field"><label>若有衝堂</label><div class="status-options">
+          <label class="status-option"><input type="radio" name="conflictStrategy" value="return" checked><span>返回修改</span></label>
+          <label class="status-option"><input type="radio" name="conflictStrategy" value="skip"><span>跳過衝突堂</span></label>
+          <label class="status-option"><input type="radio" name="conflictStrategy" value="supplement"><span>往後補足</span></label>
+        </div></div>
+        <div id="series-edit-preview" class="repeat-summary" aria-live="polite"></div>
+        <div class="form-error" data-error="form"></div>
+        <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">套用批次修改</button></div>
+      </form>`, root => {
+        const form = $("#series-edit-form", root);
+        const includeCompleted = $("#edit-include-completed", root);
+        let currentPlan = null;
+        const formOptions = () => {
+          const fd = new FormData(form);
+          const scope = String(fd.get("editScope") || "only");
+          return {
+            lessonId: lesson.id,
+            scope,
+            includeCompleted: includeCompleted.checked,
+            conflictStrategy: String(fd.get("conflictStrategy") || "return"),
+            changes: {
+              ...(scope === "only" ? { date: $("#series-edit-date", root).value } : { weekday: Number($("#series-edit-weekday", root).value) }),
+              startTime: $("#series-edit-start", root).value,
+              duration: Number($("#series-edit-duration", root).value),
+              subject: $("#series-edit-subject", root).value.trim(),
+              mode: String(fd.get("seriesEditMode") || "inPerson"),
+              location: $("#series-edit-location", root).value.trim(),
+            },
+          };
+        };
+        const updatePreview = () => {
+          const options = formOptions();
+          const bulk = options.scope !== "only";
+          $("#series-edit-date-row", root).hidden = bulk;
+          $("#series-edit-weekday-row", root).hidden = !bulk;
+          $$('[data-edit-scope-label]', root).forEach(label => {
+            const scope = label.dataset.editScopeLabel;
+            const count = Domain.seriesLessons(state, { lessonId: lesson.id, scope, includeCompleted: includeCompleted.checked }).length;
+            const name = { only: "僅此堂", later: "此堂及之後", series: "整個系列" }[scope];
+            label.textContent = `${name}（${count}）`;
+          });
+          try {
+            currentPlan = Domain.previewSeriesEdit(state, options);
+            const accepted = currentPlan.accepted.length;
+            const conflictCount = currentPlan.conflicts.length;
+            $("#series-edit-preview", root).innerHTML = `預計影響 <strong>${currentPlan.targets.length}</strong> 堂；可修改 ${accepted} 堂；衝堂 ${conflictCount} 堂${currentPlan.supplemented.length ? `；往後補足 ${currentPlan.supplemented.length} 堂` : ""}。${conflictCount && options.conflictStrategy === "return" ? "<br><strong>請調整內容，或選擇跳過／往後補足。</strong>" : ""}`;
+            $('[data-error="form"]', form).textContent = "";
+            $('button[type="submit"]', form).disabled = !currentPlan.targets.length || (conflictCount > 0 && options.conflictStrategy === "return") || currentPlan.limitReached;
+          } catch (error) {
+            currentPlan = null;
+            $("#series-edit-preview", root).textContent = error.message;
+            $('button[type="submit"]', form).disabled = true;
+          }
+        };
+        $$('input,select', form).forEach(input => input.addEventListener("change", updatePreview));
+        $$('input[type="text"],input[type="number"],input[type="time"]', form).forEach(input => input.addEventListener("input", updatePreview));
+        updatePreview();
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          const options = formOptions();
+          const error = $('[data-error="form"]', form);
+          error.textContent = "";
+          if (!options.changes.subject) { error.textContent = "請輸入科目"; return; }
+          try {
+            const result = Domain.batchEditSeries(state, { ...options, idFactory: uid, now: new Date().toISOString() });
+            saveData();
+            closeSheet();
+            ui.selectedDate = result.plan.accepted[0].candidate.date;
+            render();
+            toast(`已修改 ${result.updatedCount} 堂固定課程`, "success", {
+              duration: 8000,
+              actions: [{ label: "復原", handler: () => undoBatchOperation(result.operation.id) }],
+            });
+          } catch (errorValue) {
+            error.textContent = errorValue.message || "批次修改失敗";
+          }
+        });
+      });
+  }
+
   function convertTrialSheet(lesson) {
     if (!lesson || lesson.lessonType !== "trial" || lesson.trial?.convertedStudentId) return;
     const defaultDate = addDays(lesson.date, 7);
@@ -3532,7 +3631,7 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "course-detail") courseDetailSheet(lessonById(id));
     else if (action === "delete-lesson") deleteSeriesLessonSheet(lessonById(id));
     else if (action === "convert-trial") convertTrialSheet(lessonById(id));
-    else if (action === "edit-lesson") lessonForm(lessonById(id));
+    else if (action === "edit-lesson") { const target = lessonById(id); if (target?.recurrenceGroupId) seriesEditSheet(target); else lessonForm(target); }
     else if (action === "reschedule-lesson") lessonForm(lessonById(id), null, null, { reschedule: true });
     else if (action === "copy-lesson") { const source = lessonById(id); if (source) lessonForm(null, source.studentId, source); }
     else if (action === "start-lesson") { closeSheet(); startLesson(id); }
