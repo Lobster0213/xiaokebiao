@@ -1065,7 +1065,7 @@ textarea { min-height: 96px; resize: vertical; }
   if (!Domain) throw new Error("小課表資料模組載入失敗");
   const STORAGE_KEY = "xiaokebiao_mvp_v1";
   const CALENDAR_VIEW_KEY = "xiaokebiao_calendar_view_v1";
-  const APP_VERSION = "0.8.1";
+  const APP_VERSION = "0.8.2";
   const DATA_VERSION = Domain.DATA_VERSION;
   const WEEK_START_HOUR = 8;
   const WEEK_END_HOUR = 23;
@@ -1117,6 +1117,7 @@ textarea { min-height: 96px; resize: vertical; }
   let deferredInstallPrompt = null;
   let androidUpdateState = null;
   let lastPromptedAndroidVersion = "";
+  let lastImportSnapshotKey = "";
 
   try {
     if (window.AndroidUpdater?.getState) androidUpdateState = JSON.parse(window.AndroidUpdater.getState());
@@ -1304,11 +1305,13 @@ textarea { min-height: 96px; resize: vertical; }
       }
       const parsed = JSON.parse(raw);
       const sourceVersion = Number(parsed.dataVersion || 0);
-      const normalized = normalizeStoredData(parsed, { existingUser: true });
-      if (!validateImportedData(normalized)) throw new Error("資料遷移後格式不正確");
       if (sourceVersion < DATA_VERSION) {
         const snapshotKey = `${STORAGE_KEY}_migration_backup_v${sourceVersion}`;
         if (!localStorage.getItem(snapshotKey)) localStorage.setItem(snapshotKey, raw);
+      }
+      const normalized = normalizeStoredData(parsed, { existingUser: true });
+      if (!validateImportedData(normalized)) throw new Error("資料遷移後格式不正確");
+      if (sourceVersion < DATA_VERSION) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
       }
       return normalized;
@@ -1973,6 +1976,11 @@ textarea { min-height: 96px; resize: vertical; }
     const hasDemoData = state.students.some(item => item.isDemoData) || state.lessons.some(item => item.isDemoData);
     let hasRecoveryData = false;
     try { hasRecoveryData = Boolean(localStorage.getItem(`${STORAGE_KEY}_recovery`)); } catch (error) { console.warn("無法讀取復原備份狀態", error); }
+    const backup = state.settings.backup || {};
+    const backupCounts = backup.lastBackupCounts;
+    const backupStatus = backup.lastBackupAt
+      ? `${new Date(backup.lastBackupAt).toLocaleString("zh-TW")} · ${backupCounts ? `${backupCounts.students} 位學生、${backupCounts.lessons} 堂課、${backupCounts.records} 筆紀錄` : "完整 JSON"}`
+      : "尚未建立完整備份";
     return `
       ${topbar()}
       <div class="page-title-row"><h1>更多</h1></div>
@@ -1987,6 +1995,7 @@ textarea { min-height: 96px; resize: vertical; }
       </section>
       <section class="section"><div class="section-heading"><h2>資料備份</h2></div>
         <div class="context-tip" style="margin-bottom:10px">建議定期下載完整 JSON 備份；CSV 適合查看明細，但不包含完整設定與帳本關係。</div>
+        <div class="repeat-summary" style="margin-bottom:10px"><strong>上次備份</strong><br>${escapeHtml(backupStatus)}</div>
         <div class="settings-card">
           <button class="settings-item" data-action="export-json"><span><strong>下載完整備份（JSON）</strong><br><small>包含老師、學生、課程與堂數紀錄</small></span><span>↓</span></button>
           <button class="settings-item" data-action="export-csv"><span><strong>下載課程明細（CSV）</strong><br><small>可用 Excel 或 Google 試算表開啟</small></span><span>↓</span></button>
@@ -3184,15 +3193,28 @@ textarea { min-height: 96px; resize: vertical; }
 
   function exportJsonBackup() {
     try {
+      const exportedAt = new Date().toISOString();
+      state.settings.backup = {
+        ...(state.settings.backup || {}),
+        lastBackupAt: exportedAt,
+        lastBackupCounts: {
+          students: state.students.length,
+          lessons: state.lessons.length,
+          records: state.lessonRecords.length,
+          transactions: state.lessonCreditTransactions.length,
+        },
+      };
+      saveData();
       const payload = {
         dataVersion: DATA_VERSION,
         version: APP_VERSION,
-        exportedAt: new Date().toISOString(),
+        exportedAt,
         teacherProfile: normalizeTeacherProfile(state.teacherProfile),
         students: state.students,
         lessons: state.lessons,
         lessonRecords: state.lessonRecords,
         lessonCreditTransactions: state.lessonCreditTransactions,
+        batchOperations: state.batchOperations,
         settings: state.settings,
       };
       downloadJsonFile(payload, `小課表完整備份_${exportTimestamp()}.json`);
@@ -3304,6 +3326,24 @@ textarea { min-height: 96px; resize: vertical; }
       toast("原始復原備份已下載");
     } catch (error) {
       toast(error.message || "無法下載復原備份", "error");
+    }
+  }
+
+  function restoreImportSnapshot(snapshotKey = lastImportSnapshotKey) {
+    try {
+      const raw = snapshotKey && localStorage.getItem(snapshotKey);
+      if (!raw) throw new Error("本次匯入的復原快照已不存在");
+      const restored = normalizeStoredData(JSON.parse(raw), { existingUser: true });
+      if (!validateImportedData(restored)) throw new Error("復原快照格式不正確");
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      state = restored;
+      invalidStoredData = null;
+      lastImportSnapshotKey = "";
+      ui = createUIState();
+      render();
+      toast("已復原匯入前的資料");
+    } catch (error) {
+      toast(error.message || "無法復原匯入前資料", "error");
     }
   }
 
@@ -3456,14 +3496,31 @@ textarea { min-height: 96px; resize: vertical; }
       }
       const reader = new FileReader();
       reader.onload = () => {
+        const previousRaw = localStorage.getItem(STORAGE_KEY) || JSON.stringify(state);
+        const snapshotKey = `${STORAGE_KEY}_import_snapshot_${Date.now()}`;
         try {
+          localStorage.setItem(snapshotKey, previousRaw);
           const parsed = JSON.parse(reader.result);
           const normalized = normalizeStoredData(parsed, { existingUser: true });
           if (!validateImportedData(normalized)) throw new Error("資料格式不正確");
+          normalized.settings.backup = {
+            ...(normalized.settings.backup || {}),
+            lastImportSnapshotAt: new Date().toISOString(),
+          };
+          const serialized = JSON.stringify(normalized);
+          localStorage.setItem(STORAGE_KEY, serialized);
           state = normalized;
-          saveData(); ui = createUIState(); render(); toast("資料匯入成功");
+          invalidStoredData = null;
+          lastImportSnapshotKey = snapshotKey;
+          ui = createUIState();
+          render();
+          toast("資料匯入成功；已保留匯入前快照", "success", {
+            duration: 8000,
+            actions: [{ label: "復原匯入", handler: () => restoreImportSnapshot(snapshotKey) }],
+          });
         } catch (err) {
-          toast(`匯入失敗：${err.message || "檔案格式錯誤"}`, "error");
+          try { localStorage.setItem(STORAGE_KEY, previousRaw); } catch (restoreError) { console.error("回復匯入前資料失敗", restoreError); }
+          toast(`匯入失敗，原資料未變更：${err.message || "檔案格式錯誤"}`, "error");
         }
       };
       reader.readAsText(file);

@@ -30,10 +30,10 @@ function legacyData() {
   };
 }
 
-test("legacy data migrates idempotently to v0.8 without changing the storage key model", () => {
+test("legacy data migrates idempotently to v0.8.2 without changing the storage key model", () => {
   const first = domain.normalizeData(legacyData(), { now: "2026-07-31T00:00:00.000Z" });
-  assert.equal(first.dataVersion, 8);
-  assert.equal(first.version, "0.8.1");
+  assert.equal(first.dataVersion, 9);
+  assert.equal(first.version, "0.8.2");
   assert.equal(first.lessons[0].lessonType, "formal");
   assert.equal(first.lessons[0].deletedAt, null);
   assert.deepEqual(first.students[0].subjects, ["數學"]);
@@ -41,10 +41,27 @@ test("legacy data migrates idempotently to v0.8 without changing the storage key
   assert.equal(first.lessons[0].autoCompletedAt, null);
   assert.equal(first.settings.hasCompletedOnboarding, true);
   assert.equal(first.settings.onboardingCurrentStep, 1);
+  assert.deepEqual(first.settings.deductionPolicy, {
+    completed: true,
+    studentLeave: true,
+    absent: true,
+    teacherLeave: false,
+    cancelled: false,
+    rescheduled: false,
+    skipped: false,
+  });
+  assert.deepEqual(first.students[0].deductionPolicy, {
+    inheritTeacherPolicy: true,
+    studentLeave: true,
+    absent: true,
+  });
+  assert.deepEqual(first.batchOperations, []);
   assert.equal(domain.creditBalance(first, "student_1"), 6);
 
   const second = domain.normalizeData(first, { now: "2026-08-01T00:00:00.000Z" });
   assert.equal(second.lessonCreditTransactions.length, first.lessonCreditTransactions.length);
+  assert.deepEqual(second.settings.deductionPolicy, first.settings.deductionPolicy);
+  assert.deepEqual(second.students[0].deductionPolicy, first.students[0].deductionPolicy);
   assert.equal(domain.creditBalance(second, "student_1"), 6);
 });
 

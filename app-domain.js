@@ -5,13 +5,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const DATA_VERSION = 8;
+  const DATA_VERSION = 9;
   const ONBOARDING_VERSION = 2;
   const SAFE_ID = /^[A-Za-z0-9_-]{1,100}$/;
   const ISO_DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
   const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
   const CREDIT_TYPES = new Set(["purchase", "gift", "manualAdjustment", "deduction", "restoration", "refund"]);
-  const LESSON_STATUSES = new Set(["scheduled", "inProgress", "completed", "studentLeave", "teacherLeave", "absent", "cancelled", "rescheduled"]);
+  const LESSON_STATUSES = new Set(["scheduled", "inProgress", "completed", "studentLeave", "teacherLeave", "absent", "cancelled", "rescheduled", "skipped"]);
+  const BATCH_OPERATION_TYPES = new Set(["create", "delete", "edit", "skip", "add"]);
   const TRIAL_RESULTS = new Set(["pending", "converted", "notContinuing", "followUp"]);
   const PRESET_DURATIONS = new Set([30, 45, 60, 90, 120, 180]);
 
@@ -47,6 +48,28 @@
       seenSubjects.add(key);
       return true;
     });
+  }
+
+  function normalizeTeacherDeductionPolicy(value) {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+      completed: true,
+      studentLeave: typeof source.studentLeave === "boolean" ? source.studentLeave : true,
+      absent: typeof source.absent === "boolean" ? source.absent : true,
+      teacherLeave: false,
+      cancelled: false,
+      rescheduled: false,
+      skipped: false,
+    };
+  }
+
+  function normalizeStudentDeductionPolicy(value) {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+      inheritTeacherPolicy: source.inheritTeacherPolicy !== false,
+      studentLeave: typeof source.studentLeave === "boolean" ? source.studentLeave : true,
+      absent: typeof source.absent === "boolean" ? source.absent : true,
+    };
   }
 
   function isRealISODate(value) {
@@ -169,6 +192,12 @@
         rescheduleScope: false,
       },
       notifications: { lastCreditReminderDate: "" },
+      deductionPolicy: normalizeTeacherDeductionPolicy(),
+      backup: {
+        lastBackupAt: "",
+        lastBackupCounts: null,
+        lastImportSnapshotAt: "",
+      },
       update: {
         autoCheck: true,
         wifiOnly: true,
@@ -188,6 +217,7 @@
     const lessonsInput = assertArray(data.lessons, "課程", 50000);
     const recordsInput = assertArray(data.lessonRecords || [], "上課紀錄", 50000);
     const transactionsInput = assertArray(data.lessonCreditTransactions || [], "堂數異動", 100000);
+    const batchOperationsInput = assertArray(data.batchOperations || [], "批次操作", 10000);
     const seen = new Set();
 
     const students = studentsInput.map((student, index) => {
@@ -213,6 +243,7 @@
         usedLessons: Math.max(0, Math.trunc(numberOr(student.usedLessons))),
         pricePerLesson: Math.max(0, numberOr(student.pricePerLesson)),
         defaultDuration: normalizeDuration(student.defaultDuration),
+        deductionPolicy: normalizeStudentDeductionPolicy(student.deductionPolicy),
         notes: text(student.notes, 2000),
         isDemoData: Boolean(student.isDemoData),
         createdAt: text(student.createdAt || now, 50),
@@ -248,6 +279,9 @@
         notes: text(lesson.notes, 2000),
         status: LESSON_STATUSES.has(lesson.status) ? lesson.status : "scheduled",
         recurrenceGroupId,
+        batchOperationId: lesson.batchOperationId && SAFE_ID.test(String(lesson.batchOperationId)) ? String(lesson.batchOperationId) : null,
+        skippedAt: lesson.skippedAt ? text(lesson.skippedAt, 50) : null,
+        skipReason: text(lesson.skipReason, 500),
         lessonType,
         trial: {
           name: text(lesson.trial?.name, 100),
@@ -309,6 +343,14 @@
         isDemoData: Boolean(record.isDemoData),
         recordedAt: text(record.recordedAt || now, 50),
         updatedAt: text(record.updatedAt || now, 50),
+        history: Array.isArray(record.history) ? record.history.slice(-200).map(entry => ({
+          previousStatus: LESSON_STATUSES.has(entry?.previousStatus) ? entry.previousStatus : "completed",
+          newStatus: LESSON_STATUSES.has(entry?.newStatus) ? entry.newStatus : "completed",
+          previousDeduction: Boolean(entry?.previousDeduction),
+          newDeduction: Boolean(entry?.newDeduction),
+          changedAt: text(entry?.changedAt || now, 50),
+          changeSource: ["system", "teacher", "batch", "import", "migration"].includes(entry?.changeSource) ? entry.changeSource : "teacher",
+        })) : [],
       };
     });
 
@@ -331,7 +373,29 @@
         relatedLessonId,
         createdAt: text(transaction.createdAt || now, 50),
         reversedAt: transaction.reversedAt ? text(transaction.reversedAt, 50) : null,
+        batchOperationId: transaction.batchOperationId && SAFE_ID.test(String(transaction.batchOperationId)) ? String(transaction.batchOperationId) : null,
         isDemoData: Boolean(transaction.isDemoData),
+      };
+    });
+
+    const batchOperations = batchOperationsInput.map((operation, index) => {
+      if (!operation || typeof operation !== "object") throw new Error(`第 ${index + 1} 筆批次操作格式錯誤`);
+      const id = assertSafeId(operation.id, `第 ${index + 1} 筆批次操作`);
+      if (seen.has(`batch:${id}`)) throw new Error(`批次操作 ID 重複：${id}`);
+      seen.add(`batch:${id}`);
+      const affectedLessonIds = [...new Set(assertArray(operation.affectedLessonIds || [], `批次操作 ${id} 的課程`, 50000)
+        .map(lessonId => assertSafeId(lessonId, `批次操作 ${id} 的課程`))
+        .filter(lessonId => lessonIds.has(lessonId)))];
+      return {
+        ...operation,
+        id,
+        type: BATCH_OPERATION_TYPES.has(operation.type) ? operation.type : "edit",
+        affectedLessonIds,
+        recurrenceGroupId: operation.recurrenceGroupId && SAFE_ID.test(String(operation.recurrenceGroupId)) ? String(operation.recurrenceGroupId) : null,
+        createdAt: text(operation.createdAt || now, 50),
+        undoUntil: text(operation.undoUntil || operation.createdAt || now, 50),
+        undoneAt: operation.undoneAt ? text(operation.undoneAt, 50) : null,
+        before: operation.before && typeof operation.before === "object" ? clone(operation.before) : null,
       };
     });
 
@@ -361,7 +425,7 @@
     return {
       ...data,
       dataVersion: DATA_VERSION,
-      version: "0.8.1",
+      version: "0.8.2",
       teacherProfile: {
         name: text(teacherSource.name || "林老師", 100).trim() || "林老師",
         phone: text(teacherSource.phone, 100).trim(),
@@ -380,6 +444,7 @@
       lessons,
       lessonRecords,
       lessonCreditTransactions,
+      batchOperations,
       settings: {
         hasCompletedOnboarding: typeof settingsSource.hasCompletedOnboarding === "boolean"
           ? settingsSource.hasCompletedOnboarding
@@ -397,6 +462,21 @@
           ...defaults.notifications,
           ...(settingsSource.notifications && typeof settingsSource.notifications === "object" ? settingsSource.notifications : {}),
           lastCreditReminderDate: text(settingsSource.notifications?.lastCreditReminderDate, 10),
+        },
+        deductionPolicy: normalizeTeacherDeductionPolicy(settingsSource.deductionPolicy),
+        backup: {
+          ...defaults.backup,
+          ...(settingsSource.backup && typeof settingsSource.backup === "object" ? settingsSource.backup : {}),
+          lastBackupAt: text(settingsSource.backup?.lastBackupAt, 50),
+          lastBackupCounts: settingsSource.backup?.lastBackupCounts && typeof settingsSource.backup.lastBackupCounts === "object"
+            ? {
+                students: Math.max(0, Math.trunc(numberOr(settingsSource.backup.lastBackupCounts.students))),
+                lessons: Math.max(0, Math.trunc(numberOr(settingsSource.backup.lastBackupCounts.lessons))),
+                records: Math.max(0, Math.trunc(numberOr(settingsSource.backup.lastBackupCounts.records))),
+                transactions: Math.max(0, Math.trunc(numberOr(settingsSource.backup.lastBackupCounts.transactions))),
+              }
+            : null,
+          lastImportSnapshotAt: text(settingsSource.backup?.lastImportSnapshotAt, 50),
         },
         update: {
           ...defaults.update,
@@ -432,6 +512,7 @@
       amount: Math.trunc(numberOr(transaction.amount)),
       reason: text(transaction.reason, 500),
       relatedLessonId: transaction.relatedLessonId ? assertSafeId(transaction.relatedLessonId, "堂數異動課程") : null,
+      batchOperationId: transaction.batchOperationId ? assertSafeId(transaction.batchOperationId, "堂數異動批次") : null,
       createdAt: transaction.createdAt || new Date().toISOString(),
       reversedAt: null,
       isDemoData: Boolean(transaction.isDemoData),
@@ -468,6 +549,16 @@
     return options.idFactory;
   }
 
+  function deductionForStatus(data, studentId, status) {
+    if (status === "completed") return true;
+    if (!["studentLeave", "absent"].includes(status)) return false;
+    const teacherPolicy = normalizeTeacherDeductionPolicy(data.settings?.deductionPolicy);
+    const student = (data.students || []).find(item => item.id === studentId);
+    const studentPolicy = normalizeStudentDeductionPolicy(student?.deductionPolicy);
+    if (studentPolicy.inheritTeacherPolicy) return Boolean(teacherPolicy[status]);
+    return Boolean(studentPolicy[status]);
+  }
+
   function completeLessonTransaction(data, options) {
     const lesson = (data.lessons || []).find(item => item.id === options.lessonId && !item.deletedAt);
     if (!lesson) throw new Error("找不到課程");
@@ -482,6 +573,7 @@
     if (!data.lessonRecords) data.lessonRecords = [];
     let record = (data.lessonRecords || []).find(item => item.lessonId === lesson.id && !item.deletedAt);
     const previousDeduction = Boolean(record?.deductLesson);
+    const previousStatus = record?.status || lesson.status || "scheduled";
     const systemCompletion = options.completionSource === "system";
 
     if (requestedDeduction && !previousDeduction && student?.billingType === "package") {
@@ -506,6 +598,7 @@
         amount: -1,
         reason: "完成課程扣堂",
         relatedLessonId: lesson.id,
+        batchOperationId: options.batchOperationId || null,
         createdAt: now,
         isDemoData: Boolean(lesson.isDemoData),
       });
@@ -523,12 +616,27 @@
         amount: 1,
         reason: "取消課程扣堂",
         relatedLessonId: lesson.id,
+        batchOperationId: options.batchOperationId || null,
         createdAt: now,
         isDemoData: Boolean(lesson.isDemoData),
       });
     }
 
     if (record) {
+      record.history = Array.isArray(record.history) ? record.history : [];
+      if (previousStatus !== status || previousDeduction !== requestedDeduction) {
+        record.history.push({
+          previousStatus,
+          newStatus: status,
+          previousDeduction,
+          newDeduction: requestedDeduction,
+          changedAt: now,
+          changeSource: ["system", "teacher", "batch", "import", "migration"].includes(options.changeSource)
+            ? options.changeSource
+            : (systemCompletion ? "system" : "teacher"),
+        });
+        record.history = record.history.slice(-200);
+      }
       record.status = status;
       record.deductLesson = requestedDeduction;
       record.note = text(options.note, 2000);
@@ -546,6 +654,14 @@
         deletedAt: null,
         recordedAt: now,
         updatedAt: now,
+        history: [{
+          previousStatus,
+          newStatus: status,
+          previousDeduction,
+          newDeduction: requestedDeduction,
+          changedAt: now,
+          changeSource: systemCompletion ? "system" : "teacher",
+        }],
         isDemoData: Boolean(lesson.isDemoData),
       };
       data.lessonRecords.push(record);
@@ -582,6 +698,7 @@
       const student = (data.students || []).find(item => item.id === lesson.studentId);
       const shouldDeduct = lesson.lessonType !== "trial"
         && student?.billingType === "package"
+        && deductionForStatus(data, student.id, "completed")
         && creditBalance(data, student.id) > 0;
       if (lesson.lessonType !== "trial" && student?.billingType === "package" && !shouldDeduct) {
         attentionStudentIds.add(student.id);
@@ -763,6 +880,7 @@
     autoCompleteOverdueLessons,
     creditBalance,
     dateToISO,
+    deductionForStatus,
     defaultSettings,
     completeLessonTransaction,
     deleteLessonTransaction,
@@ -771,7 +889,9 @@
     isRealISODate,
     normalizeData,
     normalizeDuration,
+    normalizeStudentDeductionPolicy,
     normalizeSubjects,
+    normalizeTeacherDeductionPolicy,
     planRecurrence,
     removeDemoData,
     reverseCreditTransaction,
