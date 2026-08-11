@@ -482,3 +482,50 @@ test("series batch edit can supplement a conflicted lesson within 104 weeks", ()
   assert.equal(result.supplementedCount, 1);
   assert.equal(data.lessons.find(item => item.id === "supp_2").date, "2026-08-20");
 });
+
+test("fixed series can pause a date range without auto completion or deduction and undo safely", () => {
+  const payload = legacyData();
+  payload.lessons = [
+    { ...payload.lessons[0], id: "pause_1", date: "2026-08-06", recurrenceGroupId: "pause_group" },
+    { ...payload.lessons[0], id: "pause_2", date: "2026-08-13", recurrenceGroupId: "pause_group" },
+    { ...payload.lessons[0], id: "pause_3", date: "2026-08-20", recurrenceGroupId: "pause_group" },
+    { ...payload.lessons[0], id: "pause_4", date: "2026-08-27", recurrenceGroupId: "pause_group" },
+  ];
+  const data = domain.normalizeData(payload, { now: "2026-08-01T00:00:00.000Z" });
+  let sequence = 0;
+  const result = domain.batchSkipSeries(data, {
+    lessonId: "pause_2", scope: "series", startDate: "2026-08-13", endDate: "2026-08-20", supplement: true,
+    reason: "暑假停課", idFactory: prefix => `${prefix}_pause_${++sequence}`, now: "2026-08-10T00:00:00.000Z",
+  });
+  assert.equal(result.skippedCount, 2);
+  assert.equal(result.supplementedCount, 2);
+  assert.equal(data.lessons.find(item => item.id === "pause_2").status, "skipped");
+  const auto = domain.autoCompleteOverdueLessons(data, {
+    idFactory: prefix => `${prefix}_auto_${++sequence}`, now: "2026-08-21T00:00:00.000Z",
+  });
+  assert.equal(auto.completed.some(item => item.lesson.id === "pause_2"), false);
+  assert.equal(auto.completed.some(item => item.lesson.id === "pause_3"), false);
+  domain.undoBatchOperation(data, { batchOperationId: result.operation.id, now: "2026-08-10T00:00:07.000Z" });
+  assert.equal(data.lessons.find(item => item.id === "pause_2").status, "scheduled");
+  assert.equal(data.lessons.filter(item => item.recurrenceGroupId === "pause_group").length, 4);
+});
+
+test("fixed series can add multiple lessons with the same recurrence group and undo the batch", () => {
+  const payload = legacyData();
+  payload.lessons = [
+    { ...payload.lessons[0], id: "add_1", date: "2026-08-06", recurrenceGroupId: "add_group" },
+    { ...payload.lessons[0], id: "add_2", date: "2026-08-13", recurrenceGroupId: "add_group" },
+  ];
+  const data = domain.normalizeData(payload, { now: "2026-08-01T00:00:00.000Z" });
+  let sequence = 0;
+  const preview = domain.previewAddSeriesLessons(data, { lessonId: "add_1", count: 4 });
+  assert.deepEqual(preview.accepted.map(item => item.date), ["2026-08-20", "2026-08-27", "2026-09-03", "2026-09-10"]);
+  const result = domain.addSeriesLessons(data, {
+    lessonId: "add_1", count: 4, idFactory: prefix => `${prefix}_add_${++sequence}`, now: "2026-08-01T00:00:00.000Z",
+  });
+  assert.equal(result.addedCount, 4);
+  assert.equal(data.lessons.filter(item => item.recurrenceGroupId === "add_group").length, 6);
+  assert.ok(result.created.every(item => item.recurrenceGroupId === "add_group" && item.status === "scheduled"));
+  domain.undoBatchOperation(data, { batchOperationId: result.operation.id, now: "2026-08-01T00:00:07.000Z" });
+  assert.equal(data.lessons.filter(item => item.recurrenceGroupId === "add_group").length, 2);
+});

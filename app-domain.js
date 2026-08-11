@@ -126,7 +126,7 @@
   function findConflicts(candidate, lessons, ignoreLessonId = null) {
     return lessons.filter(existing => {
       if (!existing || existing.deletedAt || existing.id === ignoreLessonId || existing.date !== candidate.date) return false;
-      if (existing.status === "cancelled" || existing.status === "rescheduled") return false;
+      if (["cancelled", "rescheduled", "skipped"].includes(existing.status)) return false;
       return intervalsOverlap(candidate, existing);
     });
   }
@@ -1000,6 +1000,115 @@
     };
   }
 
+  function createSeriesLessonCopies(data, anchor, candidates, options) {
+    const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    return candidates.map(candidate => ({
+      ...clone(anchor),
+      id: idFactory("lesson"),
+      date: candidate.date,
+      startTime: candidate.startTime || anchor.startTime,
+      endTime: candidate.endTime || anchor.endTime,
+      recurrenceGroupId: anchor.recurrenceGroupId,
+      batchOperationId: options.batchOperationId || null,
+      status: "scheduled",
+      startedAt: null,
+      recordId: null,
+      autoCompletedAt: null,
+      completionSource: null,
+      skippedAt: null,
+      skipReason: "",
+      deletedAt: null,
+      deletion: null,
+      rescheduleHistory: [],
+      createdAt: now,
+      updatedAt: now,
+    }));
+  }
+
+  function previewAddSeriesLessons(data, options) {
+    const anchor = (data.lessons || []).find(item => item.id === options.lessonId && !item.deletedAt);
+    if (!anchor?.recurrenceGroupId) throw new Error("這不是固定課程系列");
+    const count = Math.min(100, Math.max(0, Math.trunc(numberOr(options.count))));
+    if (!count) throw new Error("增加堂數必須是 1～100 的整數");
+    const series = (data.lessons || []).filter(item => !item.deletedAt && item.recurrenceGroupId === anchor.recurrenceGroupId);
+    const last = [...series].sort((first, second) => lessonSortKey(second).localeCompare(lessonSortKey(first)))[0];
+    const weekdays = [...new Set(series.map(item => weekdayNumber(item.date)))].sort();
+    const startDate = addDaysISO(last.date, 1);
+    const plan = planRecurrence({
+      startDate,
+      weekdays,
+      targetCount: count,
+      baseLesson: {
+        ...last,
+        id: undefined,
+        date: startDate,
+        status: "scheduled",
+        recordId: null,
+      },
+    }, data.lessons || [], { autoSupplement: true, maxWeeks: options.maxWeeks || 104 });
+    return { ...plan, anchor, last, weekdays };
+  }
+
+  function addSeriesLessons(data, options) {
+    const plan = previewAddSeriesLessons(data, options);
+    if (plan.limitReached || plan.accepted.length !== Number(options.count)) throw new Error("104 週內無法補足指定堂數");
+    const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    const batchOperationId = options.batchOperationId || idFactory("batch");
+    const created = createSeriesLessonCopies(data, plan.last, plan.accepted, { ...options, batchOperationId, idFactory, now });
+    data.lessons.push(...created);
+    const operation = createBatchOperation(data, {
+      ...options,
+      batchOperationId,
+      type: "add",
+      recurrenceGroupId: plan.anchor.recurrenceGroupId,
+      affectedLessonIds: created.map(item => item.id),
+      now,
+    });
+    return { operation, plan, created, addedCount: created.length };
+  }
+
+  function batchSkipSeries(data, options) {
+    const startDate = isRealISODate(options.startDate) ? options.startDate : null;
+    const endDate = isRealISODate(options.endDate) ? options.endDate : startDate;
+    let targets = seriesLessons(data, { ...options, includeCompleted: false })
+      .filter(item => ["scheduled", "inProgress"].includes(item.status));
+    if (startDate) targets = targets.filter(item => item.date >= startDate && item.date <= endDate);
+    if (!targets.length) throw new Error("日期範圍內沒有可暫停的課程");
+    const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    const batchOperationId = options.batchOperationId || idFactory("batch");
+    const before = { lessons: targets.map(item => clone(item)), records: [], addedLessonIds: [] };
+    for (const lesson of targets) {
+      lesson.status = "skipped";
+      lesson.skippedAt = now;
+      lesson.skipReason = text(options.reason || "固定課程暫停", 500);
+      lesson.startedAt = null;
+      lesson.batchOperationId = batchOperationId;
+      lesson.updatedAt = now;
+    }
+    let created = [];
+    let supplementPlan = null;
+    if (options.supplement === true) {
+      supplementPlan = previewAddSeriesLessons(data, { lessonId: targets[0].id, count: targets.length, maxWeeks: options.maxWeeks || 104 });
+      if (supplementPlan.limitReached) throw new Error("104 週內無法補足暫停堂數");
+      created = createSeriesLessonCopies(data, supplementPlan.last, supplementPlan.accepted, { ...options, batchOperationId, idFactory, now });
+      data.lessons.push(...created);
+      before.addedLessonIds = created.map(item => item.id);
+    }
+    const operation = createBatchOperation(data, {
+      ...options,
+      batchOperationId,
+      type: "skip",
+      recurrenceGroupId: targets[0].recurrenceGroupId,
+      affectedLessonIds: [...targets.map(item => item.id), ...created.map(item => item.id)],
+      before,
+      now,
+    });
+    return { operation, skippedCount: targets.length, supplementedCount: created.length, created, supplementPlan };
+  }
+
   function restoreLessonTransaction(data, options) {
     const lesson = (data.lessons || []).find(item => item.id === options.lessonId && item.deletedAt);
     if (!lesson) throw new Error("找不到已刪除課程");
@@ -1044,6 +1153,10 @@
     } else if (operation.before?.lessons) {
       const beforeLessons = new Map(operation.before.lessons.map(item => [item.id, clone(item)]));
       data.lessons = (data.lessons || []).map(item => beforeLessons.get(item.id) || item);
+      if (Array.isArray(operation.before.addedLessonIds)) {
+        const addedIds = new Set(operation.before.addedLessonIds);
+        data.lessons = data.lessons.filter(item => !addedIds.has(item.id));
+      }
       if (Array.isArray(operation.before.records)) {
         const beforeRecords = new Map(operation.before.records.map(item => [item.id, clone(item)]));
         data.lessonRecords = (data.lessonRecords || []).map(item => beforeRecords.get(item.id) || item);
@@ -1095,9 +1208,11 @@
     PRESET_DURATIONS,
     addCreditTransaction,
     addDaysISO,
+    addSeriesLessons,
     autoCompleteOverdueLessons,
     batchEditSeries,
     batchDeleteLessons,
+    batchSkipSeries,
     creditBalance,
     dateToISO,
     deductionForStatus,
@@ -1114,6 +1229,7 @@
     normalizeTeacherDeductionPolicy,
     planRecurrence,
     previewSeriesEdit,
+    previewAddSeriesLessons,
     removeDemoData,
     reverseCreditTransaction,
     restoreLessonTransaction,
