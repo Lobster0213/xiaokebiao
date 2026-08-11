@@ -1441,6 +1441,11 @@ textarea { min-height: 96px; resize: vertical; }
   function lessonById(id) { return state.lessons.find(l => l.id === id); }
   function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id && !r.deletedAt); }
   function activeLessons() { return state.lessons.filter(lesson => !lesson.deletedAt); }
+  function futureScheduledLessons(studentId) {
+    return activeLessons()
+      .filter(lesson => lesson.studentId === studentId && lesson.date >= todayISO() && ["scheduled", "inProgress"].includes(lesson.status))
+      .sort((first, second) => `${first.date}${first.startTime}`.localeCompare(`${second.date}${second.startTime}`));
+  }
   function lessonDisplayPerson(lesson) {
     if (lesson.lessonType === "trial") return { name: `${lesson.trial?.name || "未命名"}（試教）`, isTrial: true };
     return studentById(lesson.studentId) || { name: "已刪除學生", isTrial: false };
@@ -1878,13 +1883,14 @@ textarea { min-height: 96px; resize: vertical; }
 
   function studentCard(student) {
     const remaining = calculateRemainingLessons(student);
-    const packageText = student.billingType === "perLesson" ? "按次計費" : `${student.usedLessons} / ${student.totalLessons} 堂`;
+    const future = futureScheduledLessons(student.id);
+    const packageText = `${future.length} 堂`;
     const remainingText = remaining == null ? "不計堂數" : `${remaining} 堂`;
     return `<article class="student-card">
       <button class="card-hit" data-action="open-student" data-id="${student.id}">
         <div class="student-head"><div class="avatar">${escapeHtml(initials(student.name))}</div><div><h3>${escapeHtml(student.name)}</h3><div class="lesson-meta">${escapeHtml(studentSubjectSummary(student))}${student.phone ? ` · ${escapeHtml(student.phone)}` : ""}</div></div></div>
-        <div class="student-stats"><div class="stat-box"><small>已上／總堂數</small><strong>${packageText}</strong></div><div class="stat-box"><small>剩餘堂數</small><strong>${remainingText}</strong></div></div>
-        ${remaining !== null && remaining <= 2 ? `<div class="warning">⚠ 即將用完</div>` : ""}
+        <div class="student-stats"><div class="stat-box"><small>未來已排堂數</small><strong>${packageText}</strong></div><div class="stat-box"><small>剩餘可用堂數</small><strong>${remainingText}</strong></div></div>
+        ${remaining !== null && future.length > remaining ? `<div class="warning">⚠ 已排 ${future.length} 堂，大於剩餘 ${remaining} 堂；仍可繼續排課</div>` : (remaining !== null && remaining <= 2 ? `<div class="warning">⚠ 即將用完</div>` : "")}
       </button>
     </article>`;
   }
@@ -1908,6 +1914,8 @@ textarea { min-height: 96px; resize: vertical; }
       return renderStudents();
     }
     const remaining = calculateRemainingLessons(student);
+    const futureLessons = futureScheduledLessons(student.id);
+    const futureLastDate = futureLessons.length ? futureLessons[futureLessons.length - 1].date : null;
     const lessons = activeLessons().filter(l => l.studentId === student.id).sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
     const records = lessons.map(l => ({ lesson: l, record: recordByLessonId(l.id) })).filter(x => x.record);
     const transactions = (state.lessonCreditTransactions || [])
@@ -1919,11 +1927,14 @@ textarea { min-height: 96px; resize: vertical; }
         <div class="detail-title"><div class="avatar">${escapeHtml(initials(student.name))}</div><div><h1>${escapeHtml(student.name)}</h1><div class="lesson-meta">${escapeHtml(studentSubjectSummary(student))}${student.phone ? ` · ${escapeHtml(student.phone)}` : ""}</div></div></div>
         <p class="subject-summary" style="margin:12px 2px 0">全部科目：${escapeHtml((student.subjects || [student.subject]).join("、"))}；預設：${escapeHtml(student.defaultSubject || student.subject)}</p>
         <div class="detail-grid">
+          <div class="info-cell"><small>剩餘可用堂數</small><strong>${remaining == null ? "按次計費" : remaining}</strong></div>
+          <div class="info-cell"><small>未來已排堂數</small><strong>${futureLessons.length}</strong></div>
+          <div class="info-cell"><small>最後排課日期</small><strong>${futureLastDate ? formatShortDate(futureLastDate) : "尚未排課"}</strong></div>
           <div class="info-cell"><small>已上堂數</small><strong>${student.usedLessons}</strong></div>
-          <div class="info-cell"><small>剩餘堂數</small><strong>${remaining == null ? "按次計費" : remaining}</strong></div>
           <div class="info-cell"><small>購買總堂數</small><strong>${student.totalLessons == null ? "—" : student.totalLessons}</strong></div>
           <div class="info-cell"><small>每堂費用</small><strong>${money(student.pricePerLesson)}</strong></div>
         </div>
+        ${remaining !== null && futureLessons.length > remaining ? `<div class="warning">⚠ 未來已排 ${futureLessons.length} 堂，大於剩餘 ${remaining} 堂。這只是提醒，不會阻止排課。</div>` : ""}
         <div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯資料</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button>${student.billingType === "package" ? `<button class="btn btn-soft" data-action="student-deduction-policy" data-id="${student.id}">扣堂規則</button><button class="btn btn-soft" data-action="add-credit" data-id="${student.id}">＋ 新增堂數</button>` : ""}</div>
         ${student.contactNote ? `<p class="lesson-meta" style="margin:14px 2px 0">聯絡備註：${escapeHtml(student.contactNote)}</p>` : ""}
         ${student.notes ? `<p class="lesson-meta" style="margin:8px 2px 0">學生備註：${escapeHtml(student.notes)}</p>` : ""}
