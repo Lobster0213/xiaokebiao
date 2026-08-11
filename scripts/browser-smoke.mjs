@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const port = process.env.CHROME_DEBUG_PORT || "9333";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const targetUrl = process.argv[2] || pathToFileURL(path.join(projectRoot, "index.html")).href;
-const screenshotPath = process.argv[3] || path.join(projectRoot, "docs", "v0.8-browser-smoke-390x844.png");
+const screenshotPath = process.argv[3] || path.join(projectRoot, "docs", "v0.8.2-browser-smoke-390x844.png");
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 let targets;
@@ -135,20 +135,45 @@ const notification = await evaluate(`window.__notificationEvents.at(-1) || null`
 if (!notification || notification.title !== "小課表測試通知" || !notification.body.includes("今天共有 3 堂課")) {
   throw new Error(`Notification test failed: ${JSON.stringify(notification)}`);
 }
+await evaluate(`(() => {
+  const key = 'xiaokebiao_mvp_v1';
+  const data = JSON.parse(localStorage.getItem(key));
+  const source = data.lessons.find(item => item.id === 'lesson_demo_1');
+  data.lessons.push({ ...source, id: 'lesson_smoke_early', startTime: '05:30', endTime: '06:30', recordId: null, status: 'scheduled', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  data.lessons.push({ ...source, id: 'lesson_smoke_late', startTime: '23:00', endTime: '23:59', recordId: null, status: 'scheduled', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  localStorage.setItem(key, JSON.stringify(data));
+  location.reload();
+})()`);
+for (let attempt = 0; attempt < 30; attempt += 1) {
+  if (await evaluate("document.readyState === 'complete' && Boolean(document.querySelector('[data-tab=\"schedule\"]'))")) break;
+  await delay(100);
+}
 await click('[data-tab="schedule"]');
 
 const week = await evaluate(`({
   days: document.querySelectorAll('.week-day-head').length,
   mondayFirst: document.querySelector('.week-day-head span')?.textContent || '',
-  calendarView: document.querySelector('[data-calendar-view="week"]')?.getAttribute('aria-pressed')
+  calendarView: document.querySelector('[data-calendar-view="week"]')?.getAttribute('aria-pressed'),
+  lastDayRight: Math.round(document.querySelectorAll('.week-day-head')[6]?.getBoundingClientRect().right || 0),
+  timeFont: parseFloat(getComputedStyle(document.querySelector('.week-event-time')).fontSize),
+  nameFont: parseFloat(getComputedStyle(document.querySelector('.week-event-name')).fontSize),
+  hint: document.querySelector('.calendar-hint')?.textContent || '',
+  hasDayAgenda: Boolean(document.querySelector('.day-agenda')),
+  hasFilter: Boolean(document.querySelector('[data-action="schedule-filter"]')),
+  dataVersion: JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1')).dataVersion
 })`);
-if (week.days !== 7 || week.mondayFirst !== "週一" || week.calendarView !== "true") {
+if (week.days !== 7 || week.mondayFirst !== "週一" || week.calendarView !== "true" || week.lastDayRight > 390 || week.timeFont < 9 || week.nameFont < 10 || !week.hint.includes("05:00–24:00") || !week.hasDayAgenda || !week.hasFilter || week.dataVersion !== 9) {
   throw new Error(`Seven-day week regression: ${JSON.stringify(week)}`);
 }
 const weekScreenshotPath = screenshotPath.replace(/\.png$/i, "-week.png");
 const weekScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 fs.mkdirSync(path.dirname(weekScreenshotPath), { recursive: true });
 fs.writeFileSync(weekScreenshotPath, Buffer.from(weekScreenshot.data, "base64"));
+
+await click('[data-action="schedule-filter"]');
+const filterControls = await evaluate("document.querySelectorAll('#schedule-filter-form select').length");
+if (filterControls !== 3) throw new Error(`Schedule filters expected 3 controls, got ${filterControls}`);
+await click('[data-action="close-sheet"]');
 
 await click('[data-calendar-view="month"]');
 const monthDays = await evaluate("document.querySelectorAll('.month-day').length");

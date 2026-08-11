@@ -1,37 +1,44 @@
-# 小課表 v0.8.1
+# 小課表 v0.8.2
 
-小課表是給個人老師使用的行動優先課表與堂數紀錄工具。v0.8.1 保留既有首頁、完整七天週視圖、月視圖與 Android 原生包裝層，並簡化日常排課及課後紀錄流程。
+小課表是給個人老師使用的行動優先課表與堂數紀錄工具。v0.8.2 保留既有首頁、完整七天週視圖、月視圖與 Android 原生包裝層，新增固定系列管理、扣堂規則、課後修正與安全備份流程。
 
 ## 目前架構
 
 - Web／PWA：`index.html`、`app-domain.js`、`manifest.webmanifest`、`service-worker.js`
 - Android：`android/` 內的原生 WebView 包裝層，最低 Android 8（API 26）
 - 資料：保留原本 `localStorage` key `xiaokebiao_mvp_v1`
-- 集中資料版本：`dataVersion: 8`
+- 集中資料版本：`dataVersion: 9`
 - 部署：推送 `main` 後由 GitHub Actions 更新 GitHub Pages
 - Android Release：推送 `v*` tag 後建置簽章 APK；含 `-rc` 等後綴的 tag 發布為 Prerelease，正式 tag 發布為 Latest Release
 
 Web 版不需要 npm 才能使用；直接開啟 `index.html` 即可。本機檔案模式不支援 Service Worker，PWA 安裝與離線快取需使用 GitHub Pages HTTPS 網址。
 
-## v0.8.1 功能
+## v0.8.2 功能
 
-- 週視圖固定星期一開始並顯示完整七天；月視圖保留 42 格月曆
+- 週視圖固定星期一開始並顯示完整七天；課程字級至少 9／10 px，依本週課程自動延伸 05:00～24:00，並保留完整當日清單
+- 課表可用學生、科目、狀態篩選；月視圖保留 42 格月曆
 - 固定排課依真實日期跨月／跨年，每批保留 `recurrenceGroupId` 並可整批復原
+- 固定系列支援僅此堂、此堂及之後、整個系列的編輯／刪除；批次預覽衝堂後可返回、跳過或往後補足
+- 固定系列可暫停單堂或日期區間，選擇是否補課；也可一次增加 1、2、4、8 或自訂堂數
+- 批次刪除、編輯、暫停與加堂都有獨立 `batchOperationId`，成功後 8 秒內只復原該批
 - 衝堂依時間區間判斷；相接時間不算衝突，取消課程可忽略，最多往後補 104 週
 - 堂數以 `LessonCreditTransaction` 帳本管理，可新增 1、2、4、8、12、16、20 或自訂 1～999 堂
 - 今日最後一堂提醒
 - 課程到達結束時間後自動完成：正式包堂有餘額時只扣一次；零堂數、按次計費與試教不扣正式堂數
 - 自動完成後仍可改為請假、缺席、取消、改期或調整是否扣堂；帳本會留下扣除與還原紀錄
-- 首頁簡化為重要提醒、下一堂課與今日課程，不再要求按「開始上課」或「記一堂」
+- 老師可設定學生請假／缺席的扣堂預設，學生可個別覆蓋；單堂仍可臨時調整
+- 最近 7 天自動完成課程可從課表或學生頁快速修正，`LessonRecord.history` 保留狀態、扣堂與來源歷程
+- 首頁維持單一「今日課程」清單，不要求按「開始上課」或「記一堂」
 - 30、45、60、90、120、180 分鐘與 15～360 分鐘自訂時長，結束時間自動計算且禁止跨越午夜
 - 學生支援多科目、預設科目與跨科目搜尋
 - 月視圖直接顯示每日有效課程堂數；取消與已改期原紀錄不計入
 - 單堂、這堂與之後、整個固定系列的改期範圍，並保留改期歷程
 - 試教課程與轉正式學生流程
-- 課程軟刪除、扣堂加回選擇與 8 秒復原
+- 學生詳情分開顯示剩餘可用堂數與未來已排堂數；超排只提醒，不阻止排課
 - 五步情境導覽、示範資料標記與只清除示範資料
 - 需輸入「確認清除」才可執行的全資料清除
-- 舊資料自動遷移、遷移前快照、完整 JSON 匯出／匯入及 CSV 公式注入防護
+- 舊資料冪等遷移、遷移前快照；匯入前自動 snapshot、驗證後才提交且當次可復原
+- 顯示上次完整備份時間與資料筆數，保留完整 JSON 匯出／匯入及 CSV 公式注入防護
 
 ## 本機驗證
 
@@ -47,8 +54,9 @@ npm run test:browser
 `scripts/browser-smoke.mjs` 可搭配開啟 DevTools Protocol（預設連接埠 9333）的 Chrome 執行 390 × 844 互動驗收。網址與截圖路徑未指定時會直接驗證目前專案並輸出到 `docs/`。它會檢查：
 
 - 五步首次教學
-- 首頁三層資訊架構
-- 七天週視圖與星期一起始
+- 首頁單一今日課程清單
+- 七天週視圖、星期一起始、最低字級、動態時段與完整當日清單
+- 課表學生／科目／狀態篩選
 - 42 格月視圖
 - 月格每日堂數
 - 時長自動計算結束時間
@@ -102,20 +110,20 @@ Repository secrets：
 
 `ANDROID_KEYSTORE_BASE64` 是 release keystore 的 Base64 內容。請另外離線備份原始 keystore 與密碼；遺失後將無法用相同簽章覆蓋更新既有 App。
 
-每一個可能安裝到手機的 APK 都必須使用新的、更高 `XIAOKEBIAO_VERSION_CODE`。公開測試版 `v0.7.0-rc.1` 使用 `7000`，正式 `v0.7.0` 使用 `7001`，v0.8.1 使用 `8001`；之後發布前需先在 `android/gradle.properties` 遞增此值。
+每一個可能安裝到手機的 APK 都必須使用新的、更高 `XIAOKEBIAO_VERSION_CODE`。公開測試版 `v0.7.0-rc.1` 使用 `7000`，正式 `v0.7.0` 使用 `7001`，v0.8.1 使用 `8001`，v0.8.2 使用 `8002`；之後發布前需先在 `android/gradle.properties` 遞增此值。
 
 建立並推送版本 tag：
 
 ```bash
-git tag v0.8.1
-git push origin v0.8.1
+git tag v0.8.2
+git push origin v0.8.2
 ```
 
 工作流程會產生：
 
 ```text
-xiaokebiao-v0.8.1-release.apk
-xiaokebiao-v0.8.1-release.apk.sha256
+xiaokebiao-v0.8.2-release.apk
+xiaokebiao-v0.8.2-release.apk.sha256
 ```
 
 並建立非 draft、非 prerelease 的正式 GitHub Release。App 只接受名稱含 `release` 的 `.apk`，會排除 debug、unsigned、test、source 與 AAB。
@@ -142,7 +150,7 @@ https://api.github.com/repos/Lobster0213/xiaokebiao/releases/latest
 - Android 的每日堂數通知只根據本機課表產生，每天最多一次；未授權通知時首頁提醒仍可使用。
 - 課表資料儲存在目前瀏覽器／Android WebView 的本機儲存空間。
 - 換裝置、清除瀏覽器資料或更換網址前，請先到「更多」下載完整 JSON 備份。
-- 匯入檔限制為 5 MB，並會驗證 ID、日期、時間、關聯與筆數上限。
+- 匯入檔限制為 5 MB，並會驗證 ID、日期、時間、關聯與筆數上限；失敗不覆寫原資料。
 - Android 覆蓋安裝會沿用相同 package 與簽章，因此不需要刪除 App，原本資料也會保留。
 
 ## 首次 GitHub Pages 設定

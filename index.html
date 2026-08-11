@@ -689,6 +689,7 @@ textarea { min-height: 96px; resize: vertical; }
   align-content: center;
   gap: 1px;
   min-width: 0;
+  border: 0;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: white;
@@ -3663,6 +3664,7 @@ textarea { min-height: 96px; resize: vertical; }
         settings: state.settings,
       };
       downloadJsonFile(payload, `小課表完整備份_${exportTimestamp()}.json`);
+      if (ui.tab === "more") render();
       toast("完整 JSON 備份已下載");
     } catch (err) {
       console.error("JSON 匯出失敗", err);
