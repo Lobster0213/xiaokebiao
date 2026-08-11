@@ -783,8 +783,8 @@ textarea { min-height: 96px; resize: vertical; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.week-event-time { font-size: 7.5px; font-weight: 850; }
-.week-event-name { margin-top: 2px; font-size: 8.5px; font-weight: 850; }
+.week-event-time { font-size: 9px; font-weight: 850; }
+.week-event-name { margin-top: 2px; font-size: 10px; font-weight: 850; }
 .week-event-subject { display: none; margin-top: 1px; font-size: 8px; }
 .week-event.has-overlap::after {
   position: absolute;
@@ -844,6 +844,9 @@ textarea { min-height: 96px; resize: vertical; }
   font-size: 11px;
   line-height: 1.45;
 }
+.calendar-filter-bar { display:flex; align-items:center; gap:8px; margin:-3px 0 10px; min-width:0; }
+.calendar-filter-summary { min-width:0; flex:1; overflow:hidden; color:var(--muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.calendar-filter-clear { border:0; background:transparent; color:var(--blue); font-weight:800; padding:5px; }
 .month-weekdays,
 .month-grid {
   display: grid;
@@ -1124,6 +1127,7 @@ textarea { min-height: 96px; resize: vertical; }
       search: "",
       studentDetailId: null,
       calendarView: loadCalendarView(),
+      scheduleFilters: { studentId: "", subject: "", status: "" },
     };
   }
 
@@ -1682,10 +1686,24 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function lessonsOn(date) {
-    return activeLessons().filter(lesson => lesson.date === date).sort((a, b) => {
+    const filters = ui.scheduleFilters || {};
+    return activeLessons().filter(lesson => lesson.date === date)
+      .filter(lesson => !filters.studentId || lesson.studentId === filters.studentId)
+      .filter(lesson => !filters.subject || lesson.subject === filters.subject)
+      .filter(lesson => !filters.status || lesson.status === filters.status)
+      .sort((a, b) => {
       const timeOrder = a.startTime.localeCompare(b.startTime);
       return timeOrder || a.endTime.localeCompare(b.endTime);
     });
+  }
+
+  function scheduleFilterBar() {
+    const filters = ui.scheduleFilters || {};
+    const labels = [];
+    if (filters.studentId) labels.push(studentById(filters.studentId)?.name || "學生");
+    if (filters.subject) labels.push(filters.subject);
+    if (filters.status) labels.push(STATUS_LABELS[filters.status] || filters.status);
+    return `<div class="calendar-filter-bar"><button class="mini-btn" data-action="schedule-filter">篩選</button><span class="calendar-filter-summary">${labels.length ? `已篩選：${escapeHtml(labels.join("・"))}` : "未套用篩選"}</span>${labels.length ? `<button class="calendar-filter-clear" data-action="clear-schedule-filter">清除</button>` : ""}</div>`;
   }
 
   function renderCalendarSwitch() {
@@ -1699,7 +1717,7 @@ textarea { min-height: 96px; resize: vertical; }
     const unit = ui.calendarView === "week" ? "週" : "月";
     return `<div class="calendar-toolbar">
       <button class="mini-btn" data-action="calendar-prev" aria-label="上一${unit}">‹</button>
-      <div class="calendar-period"><strong>${calendarPeriodLabel()}</strong><button class="calendar-today-btn" data-action="calendar-today">回到今天</button></div>
+      <div class="calendar-period"><strong>${calendarPeriodLabel()}</strong><button class="calendar-today-btn" data-action="calendar-today">回到現在</button></div>
       <button class="mini-btn" data-action="calendar-next" aria-label="下一${unit}">›</button>
     </div>`;
   }
@@ -1738,10 +1756,10 @@ textarea { min-height: 96px; resize: vertical; }
     return output;
   }
 
-  function renderWeekEvent(layoutItem) {
+  function renderWeekEvent(layoutItem, rangeStartHour = WEEK_START_HOUR, rangeEndHour = WEEK_END_HOUR) {
     const { lesson, lane = 0, laneCount = 1, hasOverlap = false } = layoutItem;
-    const rangeStart = WEEK_START_HOUR * 60;
-    const rangeEnd = WEEK_END_HOUR * 60;
+    const rangeStart = rangeStartHour * 60;
+    const rangeEnd = rangeEndHour * 60;
     const lessonStart = timeToMinutes(lesson.startTime);
     const lessonEnd = timeToMinutes(lesson.endTime);
     const visibleStart = Math.max(rangeStart, lessonStart);
@@ -1766,35 +1784,41 @@ textarea { min-height: 96px; resize: vertical; }
     const dates = weekDates(ui.selectedDate);
     const weekday = ["一", "二", "三", "四", "五", "六", "日"];
     const today = todayISO();
+    const visibleLessons = dates.flatMap(date => lessonsOn(date)).filter(lesson => !["cancelled", "rescheduled", "skipped"].includes(lesson.status));
+    const earliest = visibleLessons.length ? Math.min(...visibleLessons.map(lesson => timeToMinutes(lesson.startTime))) : WEEK_START_HOUR * 60;
+    const latest = visibleLessons.length ? Math.max(...visibleLessons.map(lesson => timeToMinutes(lesson.endTime))) : WEEK_END_HOUR * 60;
+    const rangeStartHour = Math.max(5, Math.min(WEEK_START_HOUR, Math.floor(earliest / 60)));
+    const rangeEndHour = Math.min(24, Math.max(WEEK_END_HOUR, Math.ceil(latest / 60)));
+    const hourCount = rangeEndHour - rangeStartHour;
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const showNow = dates.includes(today) && nowMinutes >= WEEK_START_HOUR * 60 && nowMinutes <= WEEK_END_HOUR * 60;
-    const timeLabels = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, index) => {
-      const hour = WEEK_START_HOUR + index;
+    const showNow = dates.includes(today) && nowMinutes >= rangeStartHour * 60 && nowMinutes <= rangeEndHour * 60;
+    const timeLabels = Array.from({ length: hourCount }, (_, index) => {
+      const hour = rangeStartHour + index;
       return `<span class="week-time-label" style="top:${index * WEEK_HOUR_HEIGHT}px">${pad(hour)}:00</span>`;
     }).join("");
-    const slotCount = (WEEK_END_HOUR - WEEK_START_HOUR) * 2;
+    const slotCount = hourCount * 2;
     return `<div class="week-scroll" data-week-scroll aria-label="完整七天週課表">
       <div class="week-canvas">
         <div class="week-corner" aria-hidden="true"></div>
         ${dates.map((date, index) => {
           const day = parseISODate(date);
-          return `<div class="week-day-head ${date === today ? "today" : ""}" style="grid-column:${index + 2};grid-row:1"><span>週${weekday[index]}</span><strong>${day.getDate()}</strong></div>`;
+          return `<button class="week-day-head ${date === today ? "today" : ""}" style="grid-column:${index + 2};grid-row:1" data-date="${date}" aria-label="查看${formatDate(date)}課程"><span>週${weekday[index]}</span><strong>${day.getDate()}</strong></button>`;
         }).join("")}
-        <div class="week-time-axis">${timeLabels}</div>
+        <div class="week-time-axis" style="height:${hourCount * WEEK_HOUR_HEIGHT}px">${timeLabels}</div>
         ${dates.map((date, index) => {
           const slots = Array.from({ length: slotCount }, (_, slotIndex) => {
-            const startMinutes = WEEK_START_HOUR * 60 + slotIndex * 30;
+            const startMinutes = rangeStartHour * 60 + slotIndex * 30;
             const startTime = `${pad(Math.floor(startMinutes / 60))}:${pad(startMinutes % 60)}`;
             return `<button class="week-slot" style="top:${slotIndex * WEEK_HOUR_HEIGHT / 2}px" data-action="add-calendar-lesson" data-calendar-date="${date}" data-start-time="${startTime}" aria-label="${formatDate(date)} ${startTime} 新增課程"></button>`;
           }).join("");
-          const events = layoutWeekLessons(lessonsOn(date)).map(renderWeekEvent).join("");
-          const nowLine = showNow && date === today ? `<div class="now-line" style="top:${((nowMinutes - WEEK_START_HOUR * 60) / 60) * WEEK_HOUR_HEIGHT}px" aria-hidden="true"></div>` : "";
-          return `<div class="week-day-column ${date === today ? "today" : ""}" style="grid-column:${index + 2}" data-week-date="${date}">${slots}${events}${nowLine}</div>`;
+          const events = layoutWeekLessons(lessonsOn(date)).map(item => renderWeekEvent(item, rangeStartHour, rangeEndHour)).join("");
+          const nowLine = showNow && date === today ? `<div class="now-line" style="top:${((nowMinutes - rangeStartHour * 60) / 60) * WEEK_HOUR_HEIGHT}px" aria-hidden="true"></div>` : "";
+          return `<div class="week-day-column ${date === today ? "today" : ""}" style="grid-column:${index + 2};height:${hourCount * WEEK_HOUR_HEIGHT}px" data-week-date="${date}">${slots}${events}${nowLine}</div>`;
         }).join("")}
       </div>
     </div>
-    <p class="calendar-hint">完整顯示星期一至星期日與 08:00–23:00；點空白時段可直接新增課程。</p>`;
+    <p class="calendar-hint">完整顯示星期一至星期日與 ${pad(rangeStartHour)}:00–${pad(rangeEndHour)}:00；點日期查看完整當日清單，點空白時段可新增課程。</p>${renderDayAgenda()}`;
   }
 
   function calendarAgendaItem(lesson) {
@@ -1820,7 +1844,12 @@ textarea { min-height: 96px; resize: vertical; }
     const currentMonth = ui.selectedDate.slice(0, 7);
     const today = todayISO();
     const lessonsByDate = new Map();
-    for (const lesson of activeLessons().filter(item => !["cancelled", "rescheduled"].includes(item.status))) {
+    const filters = ui.scheduleFilters || {};
+    for (const lesson of activeLessons()
+      .filter(item => filters.status || !["cancelled", "rescheduled"].includes(item.status))
+      .filter(item => !filters.studentId || item.studentId === filters.studentId)
+      .filter(item => !filters.subject || item.subject === filters.subject)
+      .filter(item => !filters.status || item.status === filters.status)) {
       if (lesson.date >= dates[0] && lesson.date <= dates[dates.length - 1]) {
         if (!lessonsByDate.has(lesson.date)) lessonsByDate.set(lesson.date, []);
         lessonsByDate.get(lesson.date).push(lesson);
@@ -1868,6 +1897,7 @@ textarea { min-height: 96px; resize: vertical; }
       <main class="calendar-page">
         <div class="page-title-row"><h1>課表</h1><button class="btn btn-primary" data-action="add-calendar-lesson" data-calendar-date="${ui.selectedDate}" data-tour-id="add-lesson">＋ 新增課程</button></div>
         ${renderCalendarSwitch()}
+        ${scheduleFilterBar()}
         ${renderCalendarToolbar()}
         ${ui.calendarView === "month" ? renderMonthView() : renderWeekView()}
         ${renderRecentAutoCompleted()}
@@ -2205,6 +2235,30 @@ textarea { min-height: 96px; resize: vertical; }
             absent: fd.get("absent") === "on",
           });
           saveData(); closeSheet(); render(); toast("老師扣堂規則已更新");
+        });
+      });
+  }
+
+  function scheduleFilterSheet() {
+    const current = ui.scheduleFilters || { studentId: "", subject: "", status: "" };
+    const subjects = [...new Set(activeLessons().map(lesson => lesson.subject).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+    openSheet("課表篩選", `
+      <form id="schedule-filter-form" class="form-grid">
+        <div class="field"><label for="filter-student">學生</label><select id="filter-student" name="studentId"><option value="">全部學生</option>${state.students.map(student => `<option value="${student.id}" ${current.studentId === student.id ? "selected" : ""}>${escapeHtml(student.name)}</option>`).join("")}</select></div>
+        <div class="field"><label for="filter-subject">科目</label><select id="filter-subject" name="subject"><option value="">全部科目</option>${subjects.map(subject => `<option value="${escapeHtml(subject)}" ${current.subject === subject ? "selected" : ""}>${escapeHtml(subject)}</option>`).join("")}</select></div>
+        <div class="field"><label for="filter-status">狀態</label><select id="filter-status" name="status"><option value="">全部狀態</option>${Object.entries(STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${current.status === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></div>
+        <div class="detail-actions"><button class="btn btn-soft" type="button" data-action="clear-schedule-filter">清除篩選</button><button class="btn btn-primary" type="submit">套用篩選</button></div>
+      </form>`, root => {
+        const form = $("#schedule-filter-form", root);
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          const fd = new FormData(form);
+          ui.scheduleFilters = {
+            studentId: String(fd.get("studentId") || ""),
+            subject: String(fd.get("subject") || ""),
+            status: String(fd.get("status") || ""),
+          };
+          closeSheet(); render();
         });
       });
   }
@@ -3844,6 +3898,8 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "open-student") { ui.studentDetailId = id; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
     else if (action === "back-students") { ui.studentDetailId = null; ui.tab = "students"; render(); }
     else if (action === "go-schedule") { ui.tab = "schedule"; ui.studentDetailId = null; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (action === "schedule-filter") scheduleFilterSheet();
+    else if (action === "clear-schedule-filter") { ui.scheduleFilters = { studentId: "", subject: "", status: "" }; closeSheet(); render(); }
     else if (action === "date-prev") { ui.selectedDate = addDays(ui.selectedDate, -1); render(); }
     else if (action === "date-next") { ui.selectedDate = addDays(ui.selectedDate, 1); render(); }
     else if (action === "calendar-prev") { ui.selectedDate = ui.calendarView === "month" ? addMonths(ui.selectedDate, -1) : addDays(ui.selectedDate, -7); render(); }
