@@ -3,6 +3,8 @@ index.before-*.html
 CODEX_*.md
 !CODEX_START_V0.7.md
 !CODEX_MASTER_UPDATE_V0.7.md
+!CODEX_START_V0.8.2.md
+!CODEX_UPDATE_V0.8.2.md
 PASTE_TO_CODEX.txt
 pwa-mobile-*.png
 .tools/
