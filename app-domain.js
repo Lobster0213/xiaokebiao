@@ -718,7 +718,9 @@
           previousDeduction,
           newDeduction: requestedDeduction,
           changedAt: now,
-          changeSource: systemCompletion ? "system" : "teacher",
+          changeSource: ["system", "teacher", "batch", "import", "migration"].includes(options.changeSource)
+            ? options.changeSource
+            : (systemCompletion ? "system" : "teacher"),
         }],
         isDemoData: Boolean(lesson.isDemoData),
       };

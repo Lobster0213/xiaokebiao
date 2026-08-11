@@ -529,3 +529,41 @@ test("fixed series can add multiple lessons with the same recurrence group and u
   domain.undoBatchOperation(data, { batchOperationId: result.operation.id, now: "2026-08-01T00:00:07.000Z" });
   assert.equal(data.lessons.filter(item => item.recurrenceGroupId === "add_group").length, 2);
 });
+
+test("teacher deduction policy and student override resolve independently", () => {
+  const data = domain.normalizeData(legacyData(), { now: "2026-08-01T00:00:00.000Z" });
+  data.settings.deductionPolicy = domain.normalizeTeacherDeductionPolicy({ studentLeave: false, absent: true });
+  assert.equal(domain.deductionForStatus(data, "student_1", "studentLeave"), false);
+  assert.equal(domain.deductionForStatus(data, "student_1", "absent"), true);
+  data.students[0].deductionPolicy = domain.normalizeStudentDeductionPolicy({ inheritTeacherPolicy: false, studentLeave: true, absent: false });
+  assert.equal(domain.deductionForStatus(data, "student_1", "studentLeave"), true);
+  assert.equal(domain.deductionForStatus(data, "student_1", "absent"), false);
+  assert.equal(domain.deductionForStatus(data, "student_1", "teacherLeave"), false);
+  assert.equal(domain.deductionForStatus(data, "student_1", "cancelled"), false);
+});
+
+test("recent correction records system and teacher history and reconciles credit once", () => {
+  const payload = legacyData();
+  payload.lessons[0].date = "2026-08-06";
+  payload.lessonCreditTransactions = [{ id: "opening_recent", studentId: "student_1", type: "purchase", amount: 6, createdAt: "2026-08-01T00:00:00.000Z" }];
+  const data = domain.normalizeData(payload, { now: "2026-08-01T00:00:00.000Z" });
+  let sequence = 0;
+  domain.autoCompleteOverdueLessons(data, { idFactory: prefix => `${prefix}_recent_${++sequence}`, now: "2026-08-06T22:00:00.000Z" });
+  assert.equal(domain.creditBalance(data, "student_1"), 5);
+  const firstRecord = data.lessonRecords[0];
+  assert.equal(firstRecord.history[0].changeSource, "system");
+  domain.completeLessonTransaction(data, {
+    lessonId: "lesson_1", status: "studentLeave", deductLesson: false, note: "事後修正",
+    changeSource: "teacher", idFactory: prefix => `${prefix}_recent_${++sequence}`, now: "2026-08-07T00:00:00.000Z",
+  });
+  assert.equal(domain.creditBalance(data, "student_1"), 6);
+  assert.equal(firstRecord.history.at(-1).changeSource, "teacher");
+  assert.equal(firstRecord.history.at(-1).previousDeduction, true);
+  assert.equal(firstRecord.history.at(-1).newDeduction, false);
+  domain.completeLessonTransaction(data, {
+    lessonId: "lesson_1", status: "studentLeave", deductLesson: false, note: "再次儲存",
+    changeSource: "teacher", idFactory: prefix => `${prefix}_recent_${++sequence}`, now: "2026-08-07T00:01:00.000Z",
+  });
+  assert.equal(domain.creditBalance(data, "student_1"), 6);
+  assert.equal(data.lessonCreditTransactions.filter(item => item.type === "restoration").length, 1);
+});
