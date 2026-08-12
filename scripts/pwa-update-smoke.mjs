@@ -20,9 +20,15 @@ const screenshotPath = process.argv[2] || path.join(projectRoot, "docs", "v0.8.2
 fs.mkdirSync(siteRoot, { recursive: true });
 fs.mkdirSync(profileRoot, { recursive: true });
 
-for (const name of ["index.html", "app-domain.js", "manifest.webmanifest", "app-icon.svg", "service-worker.js"]) {
+for (const name of ["index.html", "app-domain.js", "push-config.js", "manifest.webmanifest", "app-icon.svg", "service-worker.js"]) {
   fs.copyFileSync(path.join(projectRoot, name), path.join(siteRoot, name));
 }
+const serviceWorkerSource = fs.readFileSync(path.join(projectRoot, "service-worker.js"), "utf8");
+const currentCacheName = serviceWorkerSource.match(/const CACHE_NAME = "([^"]+)"/)?.[1];
+const currentVersion = serviceWorkerSource.match(/const PWA_VERSION = "([^"]+)"/)?.[1];
+const cacheVersion = Number(currentCacheName?.match(/-v(\d+)$/)?.[1]);
+if (!currentCacheName || !currentVersion || !Number.isInteger(cacheVersion)) throw new Error("Unable to read current PWA version metadata");
+const nextCacheName = currentCacheName.replace(/-v\d+$/, `-v${cacheVersion + 1}`);
 fs.cpSync(path.join(projectRoot, "icons"), path.join(siteRoot, "icons"), { recursive: true });
 
 const contentTypes = {
@@ -140,7 +146,7 @@ try {
   await command("Page.navigate", { url: targetUrl });
   await waitFor("document.readyState === 'complete'", "initial page load");
   await waitFor("navigator.serviceWorker.controller !== null", "initial service worker control");
-  await waitFor(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response?.text()).then(value => value === 'xiaokebiao-pwa-v5')`, "v5 active cache");
+  await waitFor(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response?.text()).then(value => value === ${JSON.stringify(currentCacheName)})`, "initial active cache");
 
   for (let step = 0; step < 6; step += 1) {
     if (!(await evaluate("Boolean(document.querySelector('#tour-next'))"))) break;
@@ -150,14 +156,13 @@ try {
   const firstInstallPrompt = await evaluate("document.querySelector('.sheet-header h2')?.textContent === '小課表有新版本'");
   if (firstInstallPrompt) throw new Error("First installation showed a false update prompt");
 
-  const v5Worker = fs.readFileSync(path.join(projectRoot, "service-worker.js"), "utf8");
-  fs.writeFileSync(path.join(siteRoot, "service-worker.js"), v5Worker.replace('xiaokebiao-pwa-v5', 'xiaokebiao-pwa-v6'));
+  fs.writeFileSync(path.join(siteRoot, "service-worker.js"), serviceWorkerSource.replace(currentCacheName, nextCacheName));
   await evaluate("navigator.serviceWorker.getRegistration().then(registration => registration.update())");
-  await waitFor(`caches.keys().then(keys => keys.includes('xiaokebiao-pwa-v6'))`, "v6 cache installation");
-  await waitFor("document.querySelector('.sheet-header h2')?.textContent?.startsWith('小課表 0.8.2')", "update consent sheet");
+  await waitFor(`caches.keys().then(keys => keys.includes(${JSON.stringify(nextCacheName)}))`, "next cache installation");
+  await waitFor(`document.querySelector('.sheet-header h2')?.textContent?.startsWith(${JSON.stringify(`小課表 ${currentVersion}`)})`, "update consent sheet");
 
   const beforeDismiss = await evaluate(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text())`);
-  if (beforeDismiss !== "xiaokebiao-pwa-v5") throw new Error(`Update activated before consent: ${beforeDismiss}`);
+  if (beforeDismiss !== currentCacheName) throw new Error(`Update activated before consent: ${beforeDismiss}`);
   const screenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
   fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
@@ -165,17 +170,17 @@ try {
   await evaluate("document.querySelector('[data-action=\"dismiss-pwa-update\"]').click()");
   await waitFor("!document.querySelector('.sheet-header h2')", "dismissed update sheet");
   const afterDismiss = await evaluate(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text())`);
-  if (afterDismiss !== "xiaokebiao-pwa-v5") throw new Error(`Dismiss changed active version: ${afterDismiss}`);
+  if (afterDismiss !== currentCacheName) throw new Error(`Dismiss changed active version: ${afterDismiss}`);
 
   await command("Page.reload", { ignoreCache: true });
   await waitFor("document.readyState === 'complete'", "reopened PWA");
-  await waitFor("document.querySelector('.sheet-header h2')?.textContent?.startsWith('小課表 0.8.2')", "next-open reminder");
+  await waitFor(`document.querySelector('.sheet-header h2')?.textContent?.startsWith(${JSON.stringify(`小課表 ${currentVersion}`)})`, "next-open reminder");
   const afterReopen = await evaluate(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text())`);
-  if (afterReopen !== "xiaokebiao-pwa-v5") throw new Error(`Reopen changed active version without consent: ${afterReopen}`);
+  if (afterReopen !== currentCacheName) throw new Error(`Reopen changed active version without consent: ${afterReopen}`);
 
   await evaluate("document.querySelector('[data-action=\"apply-pwa-update\"]').click()");
-  await waitFor(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text()).then(value => value === 'xiaokebiao-pwa-v6')`, "accepted v6 activation");
-  await waitFor(`caches.keys().then(keys => !keys.includes('xiaokebiao-pwa-v5'))`, "old cache cleanup");
+  await waitFor(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text()).then(value => value === ${JSON.stringify(nextCacheName)})`, "accepted update activation");
+  await waitFor(`caches.keys().then(keys => !keys.includes(${JSON.stringify(currentCacheName)}))`, "old cache cleanup");
   if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
 
   console.log(JSON.stringify({
@@ -185,7 +190,7 @@ try {
     activeBeforeDismiss: beforeDismiss,
     activeAfterDismiss: afterDismiss,
     activeAfterReopen: afterReopen,
-    activeAfterConsent: "xiaokebiao-pwa-v6",
+    activeAfterConsent: nextCacheName,
     oldCacheRemovedAfterConsent: true,
     runtimeErrors: 0,
     screenshotPath,

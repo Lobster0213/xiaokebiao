@@ -9,6 +9,8 @@ PASTE_TO_CODEX.txt
 pwa-mobile-*.png
 .tools/
 node_modules/
+push-server/node_modules/
+push-server/dist/
 android/.gradle/
 android/**/build/
 android/local.properties
@@ -18,3 +20,5 @@ dist/*.apk
 dist/*.sha256
 .DS_Store
 Thumbs.db
+.dev.vars
+.wrangler/

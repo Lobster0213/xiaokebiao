@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "xiaokebiao-push",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGIN": "https://lobster0213.github.io",
+    "VAPID_SUBJECT": "mailto:lobster0213@users.noreply.github.com"
+  },
+  "kv_namespaces": [
+    { "binding": "SUBSCRIPTIONS" }
+  ],
+  "secrets": {
+    "required": ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "ADMIN_TOKEN"]
+  }
+}

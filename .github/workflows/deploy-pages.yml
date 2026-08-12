@@ -23,7 +23,7 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir _site
-          cp index.html app-domain.js manifest.webmanifest service-worker.js app-icon.svg _site/
+          cp index.html app-domain.js push-config.js manifest.webmanifest service-worker.js app-icon.svg _site/
           cp -R icons _site/icons
           touch _site/.nojekyll
 
