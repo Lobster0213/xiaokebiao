@@ -1,6 +1,6 @@
-const CACHE_NAME = "xiaokebiao-pwa-v6";
-const PWA_VERSION = "0.8.2-test.1";
-const PWA_RELEASE_NOTES = "安扭～";
+const CACHE_NAME = "xiaokebiao-pwa-v7";
+const PWA_VERSION = "0.8.2-test.2";
+const PWA_RELEASE_NOTES = "通知顯示：安扭～（第二次更新提示測試）";
 const CACHE_PREFIX = "xiaokebiao-pwa-v";
 const META_CACHE_NAME = "xiaokebiao-pwa-meta";
 const ACTIVE_CACHE_URL = new URL("./__active-cache__", self.registration.scope).href;
