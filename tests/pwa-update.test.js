@@ -28,5 +28,5 @@ test("active PWA serves its cached shell until the waiting version is accepted",
   assert.match(serviceWorker, /readActiveCacheName\(\)/);
   assert.match(serviceWorker, /writeActiveCacheName\(CACHE_NAME\)/);
   assert.match(serviceWorker, /activeCache\.match\(event\.request\)/);
-  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v5"/);
+  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v6"/);
 });
