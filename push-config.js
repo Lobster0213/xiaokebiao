@@ -1,3 +1,3 @@
 window.XIAOKEBIAO_PUSH_CONFIG = Object.freeze({
-  apiBaseUrl: "",
+  apiBaseUrl: "https://xiaokebiao-push.xiaokebiao.workers.dev",
 });

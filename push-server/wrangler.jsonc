@@ -10,7 +10,7 @@
     "VAPID_SUBJECT": "mailto:lobster0213@users.noreply.github.com"
   },
   "kv_namespaces": [
-    { "binding": "SUBSCRIPTIONS" }
+    { "binding": "SUBSCRIPTIONS", "id": "c098230e50884b66bf8e622d9f63f8a2" }
   ],
   "secrets": {
     "required": ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "ADMIN_TOKEN"]

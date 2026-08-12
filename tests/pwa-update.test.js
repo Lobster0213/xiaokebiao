@@ -28,7 +28,7 @@ test("active PWA serves its cached shell until the waiting version is accepted",
   assert.match(serviceWorker, /readActiveCacheName\(\)/);
   assert.match(serviceWorker, /writeActiveCacheName\(CACHE_NAME\)/);
   assert.match(serviceWorker, /activeCache\.match\(event\.request\)/);
-  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v7"/);
+  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v8"/);
 });
 
 test("service worker receives visible pushes and keeps notification clicks same-origin", () => {

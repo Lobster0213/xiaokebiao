@@ -1,4 +1,4 @@
-const CACHE_NAME = "xiaokebiao-pwa-v7";
+const CACHE_NAME = "xiaokebiao-pwa-v8";
 const PWA_VERSION = "0.8.2-push.1";
 const PWA_RELEASE_NOTES = "新增可由老師主動啟用的遠端推播與安全訂閱管理。";
 const CACHE_PREFIX = "xiaokebiao-pwa-v";
