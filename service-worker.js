@@ -1,12 +1,13 @@
-const CACHE_NAME = "xiaokebiao-pwa-v7";
-const PWA_VERSION = "0.8.2-test.2";
-const PWA_RELEASE_NOTES = "通知顯示：安扭～（第二次更新提示測試）";
+const CACHE_NAME = "xiaokebiao-pwa-v8";
+const PWA_VERSION = "0.8.2-push.1";
+const PWA_RELEASE_NOTES = "新增可由老師主動啟用的遠端推播與安全訂閱管理。";
 const CACHE_PREFIX = "xiaokebiao-pwa-v";
 const META_CACHE_NAME = "xiaokebiao-pwa-meta";
 const ACTIVE_CACHE_URL = new URL("./__active-cache__", self.registration.scope).href;
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./push-config.js",
   "./app-domain.js",
   "./manifest.webmanifest",
   "./app-icon.svg",
@@ -95,5 +96,41 @@ self.addEventListener("fetch", event => {
       if (fallback) return fallback;
     }
     return fetch(event.request);
+  })());
+});
+
+self.addEventListener("push", event => {
+  let payload = {};
+  try {
+    payload = event.data?.json() || {};
+  } catch {
+    payload = { body: event.data?.text() || "你有一則小課表通知。" };
+  }
+  const title = String(payload.title || "小課表").slice(0, 80);
+  const body = String(payload.body || "你有一則小課表通知。").slice(0, 240);
+  const targetUrl = new URL(String(payload.url || "./"), self.registration.scope);
+  if (targetUrl.origin !== self.location.origin) targetUrl.href = self.registration.scope;
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: "./icons/icon-192.png",
+    badge: "./icons/icon-192.png",
+    tag: String(payload.tag || "xiaokebiao-broadcast").slice(0, 32),
+    renotify: true,
+    data: { url: targetUrl.href },
+  }));
+});
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || self.registration.scope;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      await existing.focus();
+      if ("navigate" in existing) await existing.navigate(targetUrl);
+      return;
+    }
+    await self.clients.openWindow(targetUrl);
   })());
 });

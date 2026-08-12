@@ -1060,6 +1060,7 @@ textarea { min-height: 96px; resize: vertical; }
   <div id="app" class="app-shell" aria-live="polite"></div>
   <div id="overlay-root"></div>
   <div id="toast-root" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
+  <script src="./push-config.js"></script>
   <script src="./app-domain.js"></script>
   <script>
 (() => {
@@ -1069,6 +1070,7 @@ textarea { min-height: 96px; resize: vertical; }
   if (!Domain) throw new Error("小課表資料模組載入失敗");
   const STORAGE_KEY = "xiaokebiao_mvp_v1";
   const CALENDAR_VIEW_KEY = "xiaokebiao_calendar_view_v1";
+  const PUSH_API_BASE_URL = String(window.XIAOKEBIAO_PUSH_CONFIG?.apiBaseUrl || "").replace(/\/$/, "");
   const APP_VERSION = "0.8.2";
   const DATA_VERSION = Domain.DATA_VERSION;
   const WEEK_START_HOUR = 8;
@@ -1115,6 +1117,7 @@ textarea { min-height: 96px; resize: vertical; }
   let lastPromptedAndroidVersion = "";
   let pwaUpdateState = null;
   let pwaUpdateDismissed = false;
+  let pushSubscriptionState = { status: "checking", message: "正在確認推播狀態…" };
   let lastImportSnapshotKey = "";
 
   try {
@@ -2026,6 +2029,26 @@ textarea { min-height: 96px; resize: vertical; }
     </section>`;
   }
 
+  function supportsWebPush() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+
+  function renderPushSettings() {
+    if (window.AndroidUpdater) return "";
+    const status = pushSubscriptionState || { status: "checking", message: "正在確認推播狀態…" };
+    const subscribed = status.status === "subscribed";
+    const unavailable = status.status === "unsupported" || status.status === "unconfigured";
+    return `<section class="section"><div class="section-heading"><h2>遠端推播</h2></div>
+      <div class="detail-hero">
+        <div class="record-row"><div><strong>${subscribed ? "已啟用推播" : "接收小課表通知"}</strong><div class="lesson-meta">${escapeHtml(status.message || "")}</div></div><span class="status status-${subscribed ? "completed" : "scheduled"}">${subscribed ? "已訂閱" : "未訂閱"}</span></div>
+        <div class="detail-actions">${subscribed
+          ? `<button class="btn btn-soft" data-action="test-local-push">顯示測試通知</button><button class="btn btn-danger" data-action="disable-web-push">停用推播</button>`
+          : `<button class="btn btn-primary btn-full" data-action="enable-web-push" ${unavailable ? "disabled" : ""}>啟用遠端推播</button>`}</div>
+      </div>
+      <p class="export-note">只有你主動啟用並允許通知後才會訂閱。伺服器只保存瀏覽器推播端點與加密公鑰，不會上傳學生、課程、電話或堂數資料。</p>
+    </section>`;
+  }
+
   function renderMore() {
     markContextTip("backup");
     const profile = state.teacherProfile || defaultTeacherProfile();
@@ -2065,6 +2088,7 @@ textarea { min-height: 96px; resize: vertical; }
         </div>
         <p class="export-note">CSV 僅包含課程明細，不會匯出老師電話、Email 或其他聯絡資料。</p>
       </section>
+      ${renderPushSettings()}
       ${renderAndroidUpdateSettings()}
       <input class="file-input" id="import-file" type="file" accept="application/json,.json" />
       <div class="version">小課表 MVP ${APP_VERSION}</div>
@@ -2133,6 +2157,112 @@ textarea { min-height: 96px; resize: vertical; }
         <p class="export-note">選擇「立即更新」才會重新載入新版；選擇「稍後」會繼續使用目前版本，下一次開啟時再提醒。</p>
         <div class="detail-actions"><button class="btn btn-soft" data-action="dismiss-pwa-update">稍後</button><button class="btn btn-primary" data-action="apply-pwa-update">立即更新</button></div>
       </div>`);
+  }
+
+  function urlBase64ToUint8Array(value) {
+    const padding = "=".repeat((4 - value.length % 4) % 4);
+    const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(character => character.charCodeAt(0)));
+  }
+
+  async function refreshPushSubscriptionState({ rerender = true } = {}) {
+    if (!supportsWebPush()) {
+      pushSubscriptionState = { status: "unsupported", message: "這個瀏覽器不支援 Web Push。iPhone 請先加入主畫面並從主畫面開啟。" };
+    } else if (!PUSH_API_BASE_URL) {
+      pushSubscriptionState = { status: "unconfigured", message: "推播伺服器尚未完成設定。" };
+    } else if (Notification.permission === "denied") {
+      pushSubscriptionState = { status: "denied", message: "通知權限已被封鎖，請到手機網站設定中允許通知。" };
+    } else {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        pushSubscriptionState = subscription
+          ? { status: "subscribed", message: "即使小課表未開啟，也能收到你從管理端發送的通知。" }
+          : { status: "idle", message: "尚未啟用；按下按鈕後瀏覽器才會詢問通知權限。" };
+      } catch (error) {
+        pushSubscriptionState = { status: "error", message: error.message || "無法讀取推播狀態。" };
+      }
+    }
+    if (rerender && ui.tab === "more" && !ui.studentDetailId) render();
+  }
+
+  async function enableWebPush() {
+    if (!supportsWebPush() || !PUSH_API_BASE_URL) {
+      toast("推播功能尚未可用", "error");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        await refreshPushSubscriptionState();
+        toast("你尚未允許通知，因此沒有建立推播訂閱", "error");
+        return;
+      }
+      pushSubscriptionState = { status: "checking", message: "正在建立安全推播訂閱…" };
+      render();
+      const configResponse = await fetch(`${PUSH_API_BASE_URL}/api/config`, { cache: "no-store" });
+      if (!configResponse.ok) throw new Error("無法取得推播公開金鑰");
+      const config = await configResponse.json();
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(config.publicKey),
+        });
+      }
+      const response = await fetch(`${PUSH_API_BASE_URL}/api/subscriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: subscription.toJSON() }),
+      });
+      if (!response.ok) {
+        await subscription.unsubscribe().catch(() => {});
+        throw new Error("伺服器未能保存推播訂閱");
+      }
+      await refreshPushSubscriptionState();
+      toast("遠端推播已啟用");
+    } catch (error) {
+      pushSubscriptionState = { status: "error", message: error.message || "啟用推播失敗。" };
+      render();
+      toast(error.message || "啟用推播失敗", "error");
+    }
+  }
+
+  async function disableWebPush() {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription && PUSH_API_BASE_URL) {
+        await fetch(`${PUSH_API_BASE_URL}/api/subscriptions`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        }).catch(() => {});
+        await subscription.unsubscribe();
+      }
+      await refreshPushSubscriptionState();
+      toast("遠端推播已停用");
+    } catch (error) {
+      toast(error.message || "停用推播失敗", "error");
+    }
+  }
+
+  async function showLocalPushTest() {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification("小課表", {
+        body: "安扭～",
+        icon: "./icons/icon-192.png",
+        badge: "./icons/icon-192.png",
+        tag: "xiaokebiao-local-test",
+        data: { url: "./" },
+      });
+      toast("已送出本機測試通知");
+    } catch (error) {
+      toast(error.message || "無法顯示測試通知", "error");
+    }
   }
 
   function applyPwaUpdate() {
@@ -3917,6 +4047,9 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "dismiss-update") closeSheet();
     else if (action === "apply-pwa-update") applyPwaUpdate();
     else if (action === "dismiss-pwa-update") { pwaUpdateDismissed = true; closeSheet(); }
+    else if (action === "enable-web-push") enableWebPush();
+    else if (action === "disable-web-push") disableWebPush();
+    else if (action === "test-local-push") showLocalPushTest();
     else if (action === "add-lesson") lessonForm(null, actionEl.dataset.studentId || null);
     else if (action === "add-calendar-lesson") {
       const date = actionEl.dataset.calendarDate || ui.selectedDate;
@@ -4060,6 +4193,7 @@ textarea { min-height: 96px; resize: vertical; }
 
   processAutoCompletions({ announce: false, render: false });
   render();
+  refreshPushSubscriptionState({ rerender: false });
   if (!state.settings?.hasCompletedOnboarding || Number(state.settings?.onboardingVersion || 0) < Domain.ONBOARDING_VERSION) {
     setTimeout(() => showOnboarding(state.settings?.onboardingCurrentStep || 1), 120);
   }

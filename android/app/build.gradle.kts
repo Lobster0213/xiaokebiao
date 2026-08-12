@@ -63,6 +63,7 @@ val syncWebAssets by tasks.registering(Copy::class) {
     from(rootProject.projectDir.parentFile) {
         include("index.html")
         include("app-domain.js")
+        include("push-config.js")
         include("manifest.webmanifest")
         include("app-icon.svg")
         include("icons/**")

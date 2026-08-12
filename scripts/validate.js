@@ -19,8 +19,16 @@ JSON.parse(fs.readFileSync(path.join(root, "manifest.webmanifest"), "utf8"));
 new Function(fs.readFileSync(path.join(root, "service-worker.js"), "utf8"));
 
 const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "deploy-pages.yml"), "utf8");
-for (const required of ["app-domain.js", "actions/configure-pages", "actions/deploy-pages"]) {
+for (const required of ["app-domain.js", "push-config.js", "actions/configure-pages", "actions/deploy-pages"]) {
   if (!workflow.includes(required)) throw new Error(`Pages workflow 缺少 ${required}`);
+}
+
+for (const required of ["enable-web-push", "disable-web-push", "PushManager", "XIAOKEBIAO_PUSH_CONFIG"]) {
+  if (!html.includes(required)) throw new Error(`Web Push 缺少 ${required}`);
+}
+const serviceWorker = fs.readFileSync(path.join(root, "service-worker.js"), "utf8");
+for (const required of ['addEventListener("push"', 'addEventListener("notificationclick"', "push-config.js"]) {
+  if (!serviceWorker.includes(required)) throw new Error(`Push Service Worker 缺少 ${required}`);
 }
 
 console.log("Static validation passed.");
