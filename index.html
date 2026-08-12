@@ -1113,6 +1113,8 @@ textarea { min-height: 96px; resize: vertical; }
   let deferredInstallPrompt = null;
   let androidUpdateState = null;
   let lastPromptedAndroidVersion = "";
+  let pwaUpdateState = null;
+  let pwaUpdateDismissed = false;
   let lastImportSnapshotKey = "";
 
   try {
@@ -2113,6 +2115,39 @@ textarea { min-height: 96px; resize: vertical; }
         <p class="export-note">APK 會在 App 內背景下載，不會開啟瀏覽器；下載後由 Android 系統顯示安裝確認。</p>
         <div class="detail-actions"><button class="btn btn-soft" data-action="dismiss-update">稍後</button><button class="btn btn-primary" data-action="download-update">下載並更新</button></div>
       </div>`);
+  }
+
+  function showPwaUpdateSheet() {
+    if (!pwaUpdateState?.available || pwaUpdateDismissed) return;
+    if ($("#overlay-root")?.children.length) {
+      setTimeout(showPwaUpdateSheet, 500);
+      return;
+    }
+    openSheet(`小課表 ${pwaUpdateState.latestVersion || "有新版本"}`, `
+      <div class="form-grid">
+        <section class="detail-hero">
+          <h3 style="margin:0 0 8px">發現新版本</h3>
+          <p style="margin:0;color:var(--muted);line-height:1.7">為避免上課途中畫面突然改變，小課表不會自行切換版本。你的學生、課程與堂數資料會保留。</p>
+        </section>
+        <div class="field"><label>更新內容</label><div class="repeat-summary" style="white-space:pre-wrap">${escapeHtml(pwaUpdateState.releaseNotes || "此版本未提供更新說明。")}</div></div>
+        <p class="export-note">選擇「立即更新」才會重新載入新版；選擇「稍後」會繼續使用目前版本，下一次開啟時再提醒。</p>
+        <div class="detail-actions"><button class="btn btn-soft" data-action="dismiss-pwa-update">稍後</button><button class="btn btn-primary" data-action="apply-pwa-update">立即更新</button></div>
+      </div>`);
+  }
+
+  function applyPwaUpdate() {
+    if (!pwaUpdateState?.available || !navigator.serviceWorker.controller) {
+      closeSheet();
+      toast("新版尚未準備完成，請稍後再試", "error");
+      return;
+    }
+    closeSheet();
+    toast("正在更新小課表…");
+    navigator.serviceWorker.controller.postMessage({ type: "ACTIVATE_PWA_UPDATE" });
+  }
+
+  function requestPwaUpdateStatus() {
+    navigator.serviceWorker.controller?.postMessage({ type: "GET_PWA_UPDATE_STATUS" });
   }
 
   window.onAndroidUpdateState = update => {
@@ -3880,6 +3915,8 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "download-update") { closeSheet(); callAndroidUpdater("downloadAndInstall"); }
     else if (action === "continue-update") callAndroidUpdater("continueInstall");
     else if (action === "dismiss-update") closeSheet();
+    else if (action === "apply-pwa-update") applyPwaUpdate();
+    else if (action === "dismiss-pwa-update") { pwaUpdateDismissed = true; closeSheet(); }
     else if (action === "add-lesson") lessonForm(null, actionEl.dataset.studentId || null);
     else if (action === "add-calendar-lesson") {
       const date = actionEl.dataset.calendarDate || ui.selectedDate;
@@ -4002,8 +4039,20 @@ textarea { min-height: 96px; resize: vertical; }
   setInterval(() => processAutoCompletions({ announce: false }), 45000);
 
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    navigator.serviceWorker.addEventListener("message", event => {
+      if (event.data?.type === "PWA_UPDATE_STATUS") {
+        pwaUpdateState = event.data;
+        if (pwaUpdateState.available) showPwaUpdateSheet();
+      } else if (event.data?.type === "PWA_UPDATE_APPLIED") {
+        location.reload();
+      }
+    });
+    navigator.serviceWorker.addEventListener("controllerchange", requestPwaUpdateStatus);
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js").catch(err => {
+      navigator.serviceWorker.register("./service-worker.js").then(registration => {
+        requestPwaUpdateStatus();
+        registration.update().catch(err => console.warn("Service Worker 更新檢查失敗", err));
+      }).catch(err => {
         console.warn("Service Worker 註冊失敗", err);
       });
     });
