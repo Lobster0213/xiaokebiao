@@ -177,8 +177,11 @@ public final class MainActivity extends Activity {
         String downloadedPath = prefs.getString("downloadedApkPath", "");
         boolean installedFromUpdater = !downloadedPath.isBlank() && new File(downloadedPath).isFile();
         if (installedFromUpdater && !currentVersion.equals(notifiedVersion)) {
-            prefs.edit().putString("notifiedInstalledVersion", currentVersion).apply();
-            showCreditReminder("小課表已更新", "已更新至 " + currentVersion + "，既有課程紀錄不受影響。");
+            prefs.edit()
+                    .putString("notifiedInstalledVersion", currentVersion)
+                    .putString("completedUpdateVersion", currentVersion)
+                    .apply();
+            showCreditReminder("小課表已更新", "已更新至 " + currentVersion + "，課程資料皆已保留。");
         }
     }
 
@@ -512,6 +515,7 @@ public final class MainActivity extends Activity {
             object.put("wifiOnly", prefs.getBoolean("wifiOnly", true));
             object.put("lastCheckedAt", prefs.getString("lastCheckedAt", ""));
             object.put("hasDownloadedApk", downloadedApkFile().isFile());
+            object.put("completedUpdateVersion", prefs.getString("completedUpdateVersion", ""));
         } catch (Exception ignored) {
         }
         return object;
@@ -562,6 +566,12 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void requestNotificationPermission() {
             runOnUiThread(MainActivity.this::requestReminderPermission);
+        }
+
+        @JavascriptInterface
+        public void acknowledgeCompletedUpdate() {
+            prefs.edit().remove("completedUpdateVersion").apply();
+            pushStateToWeb();
         }
 
         @JavascriptInterface

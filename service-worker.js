@@ -1,6 +1,6 @@
-const CACHE_NAME = "xiaokebiao-pwa-v9";
-const PWA_VERSION = "0.8.2-notify.1";
-const PWA_RELEASE_NOTES = "精簡介面文字；堂數剩餘 1 堂與 0 堂時各提醒一次；更新完成後顯示通知。";
+const CACHE_NAME = "xiaokebiao-pwa-v10";
+const PWA_VERSION = "0.8.2-inbox.1";
+const PWA_RELEASE_NOTES = "新增鈴鐺通知中心；教學加入推播與手機安裝步驟。";
 const CACHE_PREFIX = "xiaokebiao-pwa-v";
 const META_CACHE_NAME = "xiaokebiao-pwa-meta";
 const ACTIVE_CACHE_URL = new URL("./__active-cache__", self.registration.scope).href;

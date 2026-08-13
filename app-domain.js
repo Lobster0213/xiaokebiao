@@ -194,6 +194,7 @@
       notifications: {
         lastCreditReminderDate: "",
         creditBalanceReminders: {},
+        inbox: [],
       },
       deductionPolicy: normalizeTeacherDeductionPolicy(),
       backup: {
@@ -458,6 +459,29 @@
         if (reminderCount >= students.length) break;
       }
     }
+    const notificationInbox = [];
+    const notificationIds = new Set();
+    const notificationSource = Array.isArray(settingsSource.notifications?.inbox)
+      ? settingsSource.notifications.inbox
+      : [];
+    for (const notice of notificationSource) {
+      if (!notice || typeof notice !== "object") continue;
+      const id = text(notice.id, 100).trim();
+      const title = text(notice.title, 100).trim();
+      if (!id || !title || notificationIds.has(id)) continue;
+      notificationIds.add(id);
+      notificationInbox.push({
+        id,
+        type: ["credit", "update", "info"].includes(notice.type) ? notice.type : "info",
+        title,
+        body: text(notice.body, 500).trim(),
+        createdAt: text(notice.createdAt, 50),
+        readAt: notice.readAt ? text(notice.readAt, 50) : null,
+        studentId: notice.studentId ? text(notice.studentId, 100) : null,
+        balance: notice.balance === 0 || notice.balance === 1 ? notice.balance : null,
+      });
+      if (notificationInbox.length >= 50) break;
+    }
     return {
       ...data,
       dataVersion: DATA_VERSION,
@@ -499,6 +523,7 @@
           ...(settingsSource.notifications && typeof settingsSource.notifications === "object" ? settingsSource.notifications : {}),
           lastCreditReminderDate: text(settingsSource.notifications?.lastCreditReminderDate, 10),
           creditBalanceReminders,
+          inbox: notificationInbox,
         },
         deductionPolicy: normalizeTeacherDeductionPolicy(settingsSource.deductionPolicy),
         backup: {
