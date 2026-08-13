@@ -95,6 +95,7 @@ public final class MainActivity extends Activity {
         activeDownloadId = prefs.getLong("downloadId", -1L);
         registerDownloadReceiver();
         ensureReminderChannel();
+        notifyCompletedUpdateIfNeeded();
 
         webView = new WebView(this);
         webView.setBackgroundColor(0xfff5f8ff);
@@ -166,8 +167,19 @@ public final class MainActivity extends Activity {
                 "堂數提醒",
                 NotificationManager.IMPORTANCE_DEFAULT
         );
-        channel.setDescription("每天最多一次，提醒今天最後一堂或需要補充堂數的學生");
+        channel.setDescription("剩餘 1 堂、0 堂與更新完成提醒");
         getSystemService(NotificationManager.class).createNotificationChannel(channel);
+    }
+
+    private void notifyCompletedUpdateIfNeeded() {
+        String currentVersion = BuildConfig.VERSION_NAME;
+        String notifiedVersion = prefs.getString("notifiedInstalledVersion", "");
+        String downloadedPath = prefs.getString("downloadedApkPath", "");
+        boolean installedFromUpdater = !downloadedPath.isBlank() && new File(downloadedPath).isFile();
+        if (installedFromUpdater && !currentVersion.equals(notifiedVersion)) {
+            prefs.edit().putString("notifiedInstalledVersion", currentVersion).apply();
+            showCreditReminder("小課表已更新", "已更新至 " + currentVersion + "，既有課程紀錄不受影響。");
+        }
     }
 
     private void requestReminderPermission() {

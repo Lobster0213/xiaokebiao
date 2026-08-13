@@ -1,6 +1,6 @@
-const CACHE_NAME = "xiaokebiao-pwa-v8";
-const PWA_VERSION = "0.8.2-push.1";
-const PWA_RELEASE_NOTES = "新增可由老師主動啟用的遠端推播與安全訂閱管理。";
+const CACHE_NAME = "xiaokebiao-pwa-v9";
+const PWA_VERSION = "0.8.2-notify.1";
+const PWA_RELEASE_NOTES = "精簡介面文字；堂數剩餘 1 堂與 0 堂時各提醒一次；更新完成後顯示通知。";
 const CACHE_PREFIX = "xiaokebiao-pwa-v";
 const META_CACHE_NAME = "xiaokebiao-pwa-meta";
 const ACTIVE_CACHE_URL = new URL("./__active-cache__", self.registration.scope).href;

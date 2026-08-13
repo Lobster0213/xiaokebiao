@@ -20,6 +20,9 @@ test("PWA update waits for explicit user consent", () => {
 
 test("PWA update reloads only after the user accepts", () => {
   assert.match(html, /event\.data\?\.type === "PWA_UPDATE_APPLIED"/);
+  assert.match(html, /PWA_UPDATE_COMPLETED_KEY/);
+  assert.match(html, /notifyCompletedPwaUpdateIfNeeded\(\)/);
+  assert.match(html, /小課表已更新完成/);
   assert.match(html, /pwaUpdateDismissed = true/);
   assert.doesNotMatch(html, /controllerchange[\s\S]{0,200}location\.reload/);
 });
@@ -28,7 +31,15 @@ test("active PWA serves its cached shell until the waiting version is accepted",
   assert.match(serviceWorker, /readActiveCacheName\(\)/);
   assert.match(serviceWorker, /writeActiveCacheName\(CACHE_NAME\)/);
   assert.match(serviceWorker, /activeCache\.match\(event\.request\)/);
-  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v8"/);
+  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v9"/);
+});
+
+test("credit notifications fire only at one and zero lessons and persist per student", () => {
+  assert.match(html, /Domain\.creditReminderTransition\(previous, balance\)/);
+  assert.match(html, /creditBalanceReminders/);
+  assert.match(html, /transition\.shouldNotify/);
+  assert.match(html, /saveData\(\{ checkCreditReminders: false \}\)/);
+  assert.doesNotMatch(html, /sendDailyCreditReminderIfNeeded/);
 });
 
 test("service worker receives visible pushes and keeps notification clicks same-origin", () => {

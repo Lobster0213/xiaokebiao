@@ -1070,6 +1070,7 @@ textarea { min-height: 96px; resize: vertical; }
   if (!Domain) throw new Error("小課表資料模組載入失敗");
   const STORAGE_KEY = "xiaokebiao_mvp_v1";
   const CALENDAR_VIEW_KEY = "xiaokebiao_calendar_view_v1";
+  const PWA_UPDATE_COMPLETED_KEY = "xiaokebiao_pwa_update_completed_v1";
   const PUSH_API_BASE_URL = String(window.XIAOKEBIAO_PUSH_CONFIG?.apiBaseUrl || "").replace(/\/$/, "");
   const APP_VERSION = "0.8.2";
   const DATA_VERSION = Domain.DATA_VERSION;
@@ -1119,6 +1120,7 @@ textarea { min-height: 96px; resize: vertical; }
   let pwaUpdateDismissed = false;
   let pushSubscriptionState = { status: "checking", message: "正在確認推播狀態…" };
   let lastImportSnapshotKey = "";
+  let creditReminderCheckQueued = false;
 
   try {
     if (window.AndroidUpdater?.getState) androidUpdateState = JSON.parse(window.AndroidUpdater.getState());
@@ -1324,13 +1326,14 @@ textarea { min-height: 96px; resize: vertical; }
     return createDemoData();
   }
 
-  function saveData() {
+  function saveData(options = {}) {
     if (invalidStoredData !== null && !localStorage.getItem(`${STORAGE_KEY}_recovery`)) {
       localStorage.setItem(`${STORAGE_KEY}_recovery`, invalidStoredData);
     }
     state = normalizeStoredData({ ...state, dataVersion: DATA_VERSION, version: APP_VERSION }, { existingUser: true });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     invalidStoredData = null;
+    if (options.checkCreditReminders !== false) queueCreditBalanceReminderCheck();
   }
 
   function calculateRemainingLessons(student) {
@@ -2025,7 +2028,7 @@ textarea { min-height: 96px; resize: vertical; }
         <label class="settings-item"><span><strong>啟動時自動檢查</strong><br><small>只讀 GitHub 最新正式 Release</small></span><span class="toggle"><input id="android-auto-check" type="checkbox" ${update.autoCheck !== false ? "checked" : ""}><span class="slider"></span></span></label>
         <label class="settings-item"><span><strong>僅 Wi-Fi 下載</strong><br><small>關閉後可能使用行動數據</small></span><span class="toggle"><input id="android-wifi-only" type="checkbox" ${update.wifiOnly !== false ? "checked" : ""}><span class="slider"></span></span></label>
       </div>
-      <p class="export-note">上次檢查：${update.lastCheckedAt ? escapeHtml(new Date(update.lastCheckedAt).toLocaleString("zh-TW")) : "尚未檢查"}。下載不會開啟瀏覽器，完成後仍須在 Android 系統畫面確認安裝。</p>
+      <p class="export-note">上次檢查：${update.lastCheckedAt ? escapeHtml(new Date(update.lastCheckedAt).toLocaleString("zh-TW")) : "尚未檢查"}</p>
     </section>`;
   }
 
@@ -2045,7 +2048,7 @@ textarea { min-height: 96px; resize: vertical; }
           ? `<button class="btn btn-soft" data-action="test-local-push">顯示測試通知</button><button class="btn btn-danger" data-action="disable-web-push">停用推播</button>`
           : `<button class="btn btn-primary btn-full" data-action="enable-web-push" ${unavailable ? "disabled" : ""}>啟用遠端推播</button>`}</div>
       </div>
-      <p class="export-note">只有你主動啟用並允許通知後才會訂閱。伺服器只保存瀏覽器推播端點與加密公鑰，不會上傳學生、課程、電話或堂數資料。</p>
+      <p class="export-note">需先允許通知；不會上傳學生或課程資料。</p>
     </section>`;
   }
 
@@ -2075,7 +2078,7 @@ textarea { min-height: 96px; resize: vertical; }
         </div>
       </section>
       <section class="section"><div class="section-heading"><h2>資料備份</h2></div>
-        <div class="context-tip" style="margin-bottom:10px">建議定期下載完整 JSON 備份；CSV 適合查看明細，但不包含完整設定與帳本關係。</div>
+        <div class="context-tip" style="margin-bottom:10px">建議定期下載完整 JSON 備份。</div>
         <div class="repeat-summary" style="margin-bottom:10px"><strong>上次備份</strong><br>${escapeHtml(backupStatus)}</div>
         <div class="settings-card">
           <button class="settings-item" data-action="export-json"><span><strong>下載完整備份（JSON）</strong><br><small>包含老師、學生、課程與堂數紀錄</small></span><span>↓</span></button>
@@ -2136,7 +2139,7 @@ textarea { min-height: 96px; resize: vertical; }
       <div class="form-grid">
         <div class="detail-hero"><div class="record-row"><div><strong>發現新版本</strong><div class="lesson-meta">${escapeHtml(update.apkName || "正式版 APK")} · ${formatFileSize(update.apkSize)}</div></div><span class="status status-scheduled">${escapeHtml(update.latestVersion || "")}</span></div></div>
         <div class="field"><label>更新內容</label><div class="repeat-summary" style="white-space:pre-wrap;max-height:180px;overflow:auto">${escapeHtml(update.releaseNotes || "此版本未提供更新說明。")}</div></div>
-        <p class="export-note">APK 會在 App 內背景下載，不會開啟瀏覽器；下載後由 Android 系統顯示安裝確認。</p>
+        <p class="export-note">有新的更新可更新，不會影響既有課程紀錄。</p>
         <div class="detail-actions"><button class="btn btn-soft" data-action="dismiss-update">稍後</button><button class="btn btn-primary" data-action="download-update">下載並更新</button></div>
       </div>`);
   }
@@ -2149,12 +2152,8 @@ textarea { min-height: 96px; resize: vertical; }
     }
     openSheet(`小課表 ${pwaUpdateState.latestVersion || "有新版本"}`, `
       <div class="form-grid">
-        <section class="detail-hero">
-          <h3 style="margin:0 0 8px">發現新版本</h3>
-          <p style="margin:0;color:var(--muted);line-height:1.7">為避免上課途中畫面突然改變，小課表不會自行切換版本。你的學生、課程與堂數資料會保留。</p>
-        </section>
+        <section class="detail-hero"><strong>有新的更新可更新，不會影響既有課程紀錄。</strong></section>
         <div class="field"><label>更新內容</label><div class="repeat-summary" style="white-space:pre-wrap">${escapeHtml(pwaUpdateState.releaseNotes || "此版本未提供更新說明。")}</div></div>
-        <p class="export-note">選擇「立即更新」才會重新載入新版；選擇「稍後」會繼續使用目前版本，下一次開啟時再提醒。</p>
         <div class="detail-actions"><button class="btn btn-soft" data-action="dismiss-pwa-update">稍後</button><button class="btn btn-primary" data-action="apply-pwa-update">立即更新</button></div>
       </div>`);
   }
@@ -2274,6 +2273,22 @@ textarea { min-height: 96px; resize: vertical; }
     closeSheet();
     toast("正在更新小課表…");
     navigator.serviceWorker.controller.postMessage({ type: "ACTIVATE_PWA_UPDATE" });
+  }
+
+  async function notifyCompletedPwaUpdateIfNeeded() {
+    let update = null;
+    try {
+      update = JSON.parse(localStorage.getItem(PWA_UPDATE_COMPLETED_KEY) || "null");
+      if (!update) return;
+      localStorage.removeItem(PWA_UPDATE_COMPLETED_KEY);
+    } catch (error) {
+      localStorage.removeItem(PWA_UPDATE_COMPLETED_KEY);
+      return;
+    }
+    const version = String(update.version || "新版");
+    const body = `已更新至 ${version}，既有課程紀錄不受影響。`;
+    await showAppNotification("小課表已更新", body, `xiaokebiao-updated-${version}`).catch(error => console.warn("顯示更新通知失敗", error));
+    toast("小課表已更新完成");
   }
 
   function requestPwaUpdateStatus() {
@@ -3706,21 +3721,87 @@ textarea { min-height: 96px; resize: vertical; }
     saveData(); render(); toast("已開始上課");
   }
 
-  function sendDailyCreditReminderIfNeeded() {
-    const today = todayISO();
-    const reminders = todayCreditReminders(activeLessons().filter(lesson => lesson.date === today));
-    if (!reminders.length || state.settings.notifications?.lastCreditReminderDate === today) return;
-    const names = [...new Set(reminders.map(item => item.student.name))];
-    const body = names.length === 1 ? `${names[0]}今天是最後一堂或需要補充堂數` : `${names.slice(0, 3).join("、")}等 ${names.length} 位學生需要確認堂數`;
-    try {
-      if (window.AndroidUpdater?.showCreditReminder) window.AndroidUpdater.showCreditReminder("小課表堂數提醒", body);
-      else if ("Notification" in window && Notification.permission === "granted") new Notification("小課表堂數提醒", { body, icon: "./icons/icon-192.png", tag: `credit-${today}` });
-      else return;
-      state.settings.notifications.lastCreditReminderDate = today;
-      saveData();
-    } catch (error) {
-      console.warn("發送堂數提醒失敗", error);
+  async function showAppNotification(title, body, tag) {
+    if (window.AndroidUpdater?.showCreditReminder) {
+      window.AndroidUpdater.showCreditReminder(title, body);
+      return true;
     }
+    if (!("Notification" in window) || Notification.permission !== "granted") return false;
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await registration.showNotification(title, {
+          body,
+          icon: "./icons/icon-192.png",
+          badge: "./icons/icon-192.png",
+          tag,
+          data: { url: "./" },
+        });
+        return true;
+      }
+      new Notification(title, { body, icon: "./icons/icon-192.png", tag });
+    } else {
+      new Notification(title, { body, icon: "./icons/icon-192.png", tag });
+    }
+    return true;
+  }
+
+  function queueCreditBalanceReminderCheck() {
+    if (creditReminderCheckQueued) return;
+    creditReminderCheckQueued = true;
+    setTimeout(() => {
+      creditReminderCheckQueued = false;
+      sendCreditBalanceRemindersIfNeeded().catch(error => console.warn("發送堂數提醒失敗", error));
+    }, 0);
+  }
+
+  async function sendCreditBalanceRemindersIfNeeded() {
+    const notifications = state.settings.notifications || (state.settings.notifications = {});
+    const tracker = notifications.creditBalanceReminders && typeof notifications.creditBalanceReminders === "object"
+      ? notifications.creditBalanceReminders
+      : (notifications.creditBalanceReminders = {});
+    const activeStudentIds = new Set(state.students.filter(student => !student.deletedAt && student.billingType === "package").map(student => student.id));
+    let changed = false;
+    const pending = [];
+
+    for (const studentId of Object.keys(tracker)) {
+      if (!activeStudentIds.has(studentId)) {
+        delete tracker[studentId];
+        changed = true;
+      }
+    }
+
+    for (const student of state.students.filter(item => !item.deletedAt && item.billingType === "package")) {
+      const balance = calculateRemainingLessons(student);
+      if (!Number.isFinite(balance)) continue;
+      const previous = tracker[student.id] && typeof tracker[student.id] === "object" ? tracker[student.id] : null;
+      const transition = Domain.creditReminderTransition(previous, balance);
+      if (transition.shouldNotify) {
+        pending.push({ student, balance });
+      }
+
+      const next = transition.state;
+      if (!previous || previous.lastBalance !== next.lastBalance || JSON.stringify(previous.notifiedLevels || []) !== JSON.stringify(next.notifiedLevels)) {
+        tracker[student.id] = next;
+        changed = true;
+      }
+    }
+
+    if (pending.length) {
+      const body = pending.length === 1
+        ? (pending[0].balance === 0 ? `${pending[0].student.name}的堂數已用完` : `${pending[0].student.name}剩餘 1 堂`)
+        : pending.slice(0, 3).map(item => `${item.student.name} ${item.balance} 堂`).join("、") + (pending.length > 3 ? `，另有 ${pending.length - 3} 位` : "");
+      const sent = await showAppNotification("小課表堂數提醒", body, "xiaokebiao-credit-balance");
+      if (sent) {
+        for (const item of pending) {
+          const reminder = tracker[item.student.id];
+          reminder.notifiedLevels = [...new Set([...(reminder.notifiedLevels || []), item.balance])];
+        }
+        changed = true;
+      }
+    }
+
+    if (changed) saveData({ checkCreditReminders: false });
   }
 
   function testNotificationMessage() {
@@ -3750,7 +3831,7 @@ textarea { min-height: 96px; resize: vertical; }
         if (options.render !== false) render();
         if (options.announce) toast(`系統已自動完成 ${result.completedCount} 堂課；可隨時修改結果`);
       }
-      sendDailyCreditReminderIfNeeded();
+      queueCreditBalanceReminderCheck();
       return result;
     } catch (error) {
       console.warn("自動完成課程檢查失敗", error);
@@ -4177,6 +4258,11 @@ textarea { min-height: 96px; resize: vertical; }
         pwaUpdateState = event.data;
         if (pwaUpdateState.available) showPwaUpdateSheet();
       } else if (event.data?.type === "PWA_UPDATE_APPLIED") {
+        try {
+          localStorage.setItem(PWA_UPDATE_COMPLETED_KEY, JSON.stringify({ version: pwaUpdateState?.latestVersion || "新版", appliedAt: new Date().toISOString() }));
+        } catch (error) {
+          console.warn("無法保存更新完成狀態", error);
+        }
         location.reload();
       }
     });
@@ -4194,6 +4280,7 @@ textarea { min-height: 96px; resize: vertical; }
   processAutoCompletions({ announce: false, render: false });
   render();
   refreshPushSubscriptionState({ rerender: false });
+  notifyCompletedPwaUpdateIfNeeded();
   if (!state.settings?.hasCompletedOnboarding || Number(state.settings?.onboardingVersion || 0) < Domain.ONBOARDING_VERSION) {
     setTimeout(() => showOnboarding(state.settings?.onboardingCurrentStep || 1), 120);
   }
