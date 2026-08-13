@@ -65,6 +65,31 @@ test("legacy data migrates idempotently to v0.8.2 without changing the storage k
   assert.equal(domain.creditBalance(second, "student_1"), 6);
 });
 
+test("credit reminders fire once at one and zero, then reset after credits are replenished", () => {
+  let transition = domain.creditReminderTransition(null, 2);
+  assert.equal(transition.shouldNotify, false);
+
+  transition = domain.creditReminderTransition(transition.state, 1);
+  assert.equal(transition.shouldNotify, true);
+  transition.state.notifiedLevels.push(1);
+  transition = domain.creditReminderTransition(transition.state, 1);
+  assert.equal(transition.shouldNotify, false);
+
+  transition = domain.creditReminderTransition(transition.state, 0);
+  assert.equal(transition.shouldNotify, true);
+  transition.state.notifiedLevels.push(0);
+  transition = domain.creditReminderTransition(transition.state, 0);
+  assert.equal(transition.shouldNotify, false);
+
+  transition = domain.creditReminderTransition(transition.state, 1);
+  assert.equal(transition.shouldNotify, false);
+  assert.deepEqual(transition.state.notifiedLevels, [1]);
+  transition = domain.creditReminderTransition(transition.state, 4);
+  assert.deepEqual(transition.state.notifiedLevels, []);
+  transition = domain.creditReminderTransition(transition.state, 1);
+  assert.equal(transition.shouldNotify, true);
+});
+
 test("unsafe imported identifiers are rejected before reaching innerHTML", () => {
   const payload = legacyData();
   payload.students[0].id = "\"><svg onload=alert(1)>";

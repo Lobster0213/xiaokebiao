@@ -191,7 +191,10 @@
         deleteAndRestoreCredit: false,
         rescheduleScope: false,
       },
-      notifications: { lastCreditReminderDate: "" },
+      notifications: {
+        lastCreditReminderDate: "",
+        creditBalanceReminders: {},
+      },
       deductionPolicy: normalizeTeacherDeductionPolicy(),
       backup: {
         lastBackupAt: "",
@@ -205,6 +208,23 @@
         downloadedVersion: "",
         downloadedApkPath: "",
       },
+    };
+  }
+
+  function creditReminderTransition(previous, currentBalance) {
+    const balance = Math.max(0, Math.trunc(numberOr(currentBalance)));
+    const previousBalance = Number.isFinite(Number(previous?.lastBalance)) ? Number(previous.lastBalance) : null;
+    let notifiedLevels = Array.isArray(previous?.notifiedLevels)
+      ? [...new Set(previous.notifiedLevels.map(Number).filter(level => level === 0 || level === 1))]
+      : [];
+    if (previousBalance !== null && balance > previousBalance) {
+      notifiedLevels = balance === 1 ? [1] : [];
+    } else if (balance > 1 && notifiedLevels.length) {
+      notifiedLevels = [];
+    }
+    return {
+      state: { lastBalance: balance, notifiedLevels },
+      shouldNotify: (balance === 1 || balance === 0) && !notifiedLevels.includes(balance),
     };
   }
 
@@ -422,6 +442,22 @@
     const teacherSource = data.teacherProfile && typeof data.teacherProfile === "object" ? data.teacherProfile : {};
     const settingsSource = data.settings && typeof data.settings === "object" ? data.settings : {};
     const defaults = defaultSettings(existingUser);
+    const reminderSource = settingsSource.notifications?.creditBalanceReminders;
+    const reminderStudentIds = new Set(students.map(student => student.id));
+    const creditBalanceReminders = {};
+    let reminderCount = 0;
+    if (reminderSource && typeof reminderSource === "object" && !Array.isArray(reminderSource)) {
+      for (const [studentId, reminder] of Object.entries(reminderSource)) {
+        if (!reminderStudentIds.has(studentId) || !reminder || typeof reminder !== "object") continue;
+        const lastBalance = Math.max(0, Math.trunc(numberOr(reminder.lastBalance)));
+        const notifiedLevels = Array.isArray(reminder.notifiedLevels)
+          ? [...new Set(reminder.notifiedLevels.map(Number).filter(level => level === 0 || level === 1))]
+          : [];
+        creditBalanceReminders[studentId] = { lastBalance, notifiedLevels };
+        reminderCount += 1;
+        if (reminderCount >= students.length) break;
+      }
+    }
     return {
       ...data,
       dataVersion: DATA_VERSION,
@@ -462,6 +498,7 @@
           ...defaults.notifications,
           ...(settingsSource.notifications && typeof settingsSource.notifications === "object" ? settingsSource.notifications : {}),
           lastCreditReminderDate: text(settingsSource.notifications?.lastCreditReminderDate, 10),
+          creditBalanceReminders,
         },
         deductionPolicy: normalizeTeacherDeductionPolicy(settingsSource.deductionPolicy),
         backup: {
@@ -1220,6 +1257,7 @@
     deductionForStatus,
     defaultSettings,
     completeLessonTransaction,
+    creditReminderTransition,
     deleteLessonTransaction,
     findConflicts,
     intervalsOverlap,

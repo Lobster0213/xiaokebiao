@@ -163,6 +163,7 @@ try {
 
   const beforeDismiss = await evaluate(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text())`);
   if (beforeDismiss !== currentCacheName) throw new Error(`Update activated before consent: ${beforeDismiss}`);
+  await evaluate("document.querySelector('#toast-root').innerHTML = ''");
   const screenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
   fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
@@ -181,6 +182,7 @@ try {
   await evaluate("document.querySelector('[data-action=\"apply-pwa-update\"]').click()");
   await waitFor(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text()).then(value => value === ${JSON.stringify(nextCacheName)})`, "accepted update activation");
   await waitFor(`caches.keys().then(keys => !keys.includes(${JSON.stringify(currentCacheName)}))`, "old cache cleanup");
+  await waitFor(`document.body.textContent.includes('小課表已更新完成') && !localStorage.getItem('xiaokebiao_pwa_update_completed_v1')`, "update completion notice");
   if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
 
   console.log(JSON.stringify({
@@ -192,6 +194,7 @@ try {
     activeAfterReopen: afterReopen,
     activeAfterConsent: nextCacheName,
     oldCacheRemovedAfterConsent: true,
+    completionNotice: true,
     runtimeErrors: 0,
     screenshotPath,
   }, null, 2));
