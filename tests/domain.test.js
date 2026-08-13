@@ -56,6 +56,7 @@ test("legacy data migrates idempotently to v0.8.2 without changing the storage k
     absent: true,
   });
   assert.deepEqual(first.batchOperations, []);
+  assert.deepEqual(first.settings.notifications.inbox, []);
   assert.equal(domain.creditBalance(first, "student_1"), 6);
 
   const second = domain.normalizeData(first, { now: "2026-08-01T00:00:00.000Z" });
@@ -63,6 +64,34 @@ test("legacy data migrates idempotently to v0.8.2 without changing the storage k
   assert.deepEqual(second.settings.deductionPolicy, first.settings.deductionPolicy);
   assert.deepEqual(second.students[0].deductionPolicy, first.students[0].deductionPolicy);
   assert.equal(domain.creditBalance(second, "student_1"), 6);
+});
+
+test("notification inbox migration is bounded, sanitized, and idempotent", () => {
+  const payload = legacyData();
+  payload.settings = {
+    notifications: {
+      inbox: Array.from({ length: 55 }, (_, index) => ({
+        id: `notice_${index}`,
+        type: index % 2 ? "credit" : "unknown",
+        title: `通知 ${index}`,
+        body: "內容",
+        createdAt: "2026-08-13T08:00:00.000Z",
+        readAt: index === 0 ? "2026-08-13T09:00:00.000Z" : null,
+        balance: index % 3,
+      })),
+    },
+  };
+  payload.settings.notifications.inbox.push({ id: "notice_0", title: "重複通知" });
+
+  const first = domain.normalizeData(payload);
+  assert.equal(first.settings.notifications.inbox.length, 50);
+  assert.equal(first.settings.notifications.inbox[0].type, "info");
+  assert.equal(first.settings.notifications.inbox[0].balance, 0);
+  assert.equal(first.settings.notifications.inbox[2].balance, null);
+  assert.equal(first.settings.notifications.inbox.filter(item => item.id === "notice_0").length, 1);
+
+  const second = domain.normalizeData(first);
+  assert.deepEqual(second.settings.notifications.inbox, first.settings.notifications.inbox);
 });
 
 test("credit reminders fire once at one and zero, then reset after credits are replenished", () => {

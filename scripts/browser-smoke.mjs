@@ -130,11 +130,23 @@ const homeScreenshotPath = screenshotPath.replace(/\.png$/i, "-home.png");
 const homeScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 fs.mkdirSync(path.dirname(homeScreenshotPath), { recursive: true });
 fs.writeFileSync(homeScreenshotPath, Buffer.from(homeScreenshot.data, "base64"));
+await click('[data-action="notification-center"]');
 await click('[data-action="notify"]');
 const notification = await evaluate(`window.__notificationEvents.at(-1) || null`);
 if (!notification || notification.title !== "小課表測試通知" || !notification.body.includes("今天共有 3 堂課")) {
   throw new Error(`Notification test failed: ${JSON.stringify(notification)}`);
 }
+await evaluate("document.querySelector('[data-action=\"close-sheet\"]')?.click()");
+await click('[data-tab="more"]');
+await click('[data-action="show-guide"]');
+const guide = await evaluate(`({
+  title: document.querySelector('.sheet-header h2')?.textContent || '',
+  text: document.querySelector('.sheet')?.textContent || ''
+})`);
+if (guide.title !== "使用教學" || !guide.text.includes("啟用遠端推播") || !guide.text.includes("加入主畫面") || !guide.text.includes("安裝應用程式")) {
+  throw new Error(`Guide regression: ${JSON.stringify(guide)}`);
+}
+await evaluate("document.querySelector('[data-action=\"close-sheet\"]')?.click()");
 await evaluate(`(() => {
   const key = 'xiaokebiao_mvp_v1';
   const data = JSON.parse(localStorage.getItem(key));

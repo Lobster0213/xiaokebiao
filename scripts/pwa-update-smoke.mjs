@@ -183,6 +183,13 @@ try {
   await waitFor(`caches.open('xiaokebiao-pwa-meta').then(cache => cache.match('./__active-cache__')).then(response => response.text()).then(value => value === ${JSON.stringify(nextCacheName)})`, "accepted update activation");
   await waitFor(`caches.keys().then(keys => !keys.includes(${JSON.stringify(currentCacheName)}))`, "old cache cleanup");
   await waitFor(`document.body.textContent.includes('小課表已更新完成') && !localStorage.getItem('xiaokebiao_pwa_update_completed_v1')`, "update completion notice");
+  await waitFor(`JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1')).settings.notifications.inbox.some(item => item.title === '小課表已更新')`, "update saved to notification center");
+  await waitFor(`Number(document.querySelector('[data-action="notification-center"] .notification-badge')?.textContent || 0) >= 1`, "notification bell badge");
+  await evaluate("document.querySelector('[data-action=\"notification-center\"]').click()");
+  await waitFor(`document.querySelector('.sheet-header h2')?.textContent === '通知' && document.querySelector('.notification-card')?.textContent.includes('小課表已更新')`, "update visible in notification center");
+  const notificationCenterScreenshotPath = screenshotPath.replace(/\.png$/i, "-notification-center.png");
+  const notificationCenterScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  fs.writeFileSync(notificationCenterScreenshotPath, Buffer.from(notificationCenterScreenshot.data, "base64"));
   if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
 
   console.log(JSON.stringify({
@@ -195,8 +202,10 @@ try {
     activeAfterConsent: nextCacheName,
     oldCacheRemovedAfterConsent: true,
     completionNotice: true,
+    notificationCenter: true,
     runtimeErrors: 0,
     screenshotPath,
+    notificationCenterScreenshotPath,
   }, null, 2));
 } finally {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: 999999, method: "Browser.close", params: {} }));

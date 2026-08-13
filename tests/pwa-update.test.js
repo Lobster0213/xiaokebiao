@@ -16,6 +16,8 @@ test("PWA update waits for explicit user consent", () => {
   assert.match(html, /data-action="apply-pwa-update">立即更新/);
   assert.match(html, /postMessage\(\{ type: "ACTIVATE_PWA_UPDATE" \}\)/);
   assert.match(html, /<label>更新內容<\/label>/);
+  assert.match(html, /更新後課程資料皆會保留。/);
+  assert.doesNotMatch(html, /為避免上課途中畫面突然改變/);
 });
 
 test("PWA update reloads only after the user accepts", () => {
@@ -31,7 +33,7 @@ test("active PWA serves its cached shell until the waiting version is accepted",
   assert.match(serviceWorker, /readActiveCacheName\(\)/);
   assert.match(serviceWorker, /writeActiveCacheName\(CACHE_NAME\)/);
   assert.match(serviceWorker, /activeCache\.match\(event\.request\)/);
-  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v9"/);
+  assert.match(serviceWorker, /const CACHE_NAME = "xiaokebiao-pwa-v10"/);
 });
 
 test("credit notifications fire only at one and zero lessons and persist per student", () => {
@@ -39,7 +41,17 @@ test("credit notifications fire only at one and zero lessons and persist per stu
   assert.match(html, /creditBalanceReminders/);
   assert.match(html, /transition\.shouldNotify/);
   assert.match(html, /saveData\(\{ checkCreditReminders: false \}\)/);
+  assert.match(html, /addInboxNotification\(\{/);
+  assert.match(html, /data-action="notification-center"/);
+  assert.match(html, /notification-badge/);
   assert.doesNotMatch(html, /sendDailyCreditReminderIfNeeded/);
+});
+
+test("guide includes concise push and phone installation steps", () => {
+  assert.match(html, /function showGuide\(\)/);
+  assert.match(html, /iPhone Safari：分享 → 加入主畫面 → 新增/);
+  assert.match(html, /Android Chrome：選單 ⋮ → 安裝應用程式/);
+  assert.match(html, /更多 → 遠端推播 → 啟用遠端推播/);
 });
 
 test("service worker receives visible pushes and keeps notification clicks same-origin", () => {
