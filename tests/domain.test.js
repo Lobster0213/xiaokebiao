@@ -32,7 +32,7 @@ function legacyData() {
 
 test("legacy data migrates idempotently to v0.8.2 without changing the storage key model", () => {
   const first = domain.normalizeData(legacyData(), { now: "2026-07-31T00:00:00.000Z" });
-  assert.equal(first.dataVersion, 9);
+  assert.equal(first.dataVersion, 10);
   assert.equal(first.version, "0.8.2");
   assert.equal(first.lessons[0].lessonType, "formal");
   assert.equal(first.lessons[0].deletedAt, null);
@@ -620,4 +620,221 @@ test("recent correction records system and teacher history and reconciles credit
   });
   assert.equal(domain.creditBalance(data, "student_1"), 6);
   assert.equal(data.lessonCreditTransactions.filter(item => item.type === "restoration").length, 1);
+});
+
+function studentManagementData() {
+  return domain.normalizeData({
+    version: "0.8.2",
+    teacherProfile: { name: "林老師", subjects: ["鋼琴"] },
+    students: [
+      {
+        id: "student_target",
+        name: "王小明",
+        subject: "鋼琴",
+        subjects: ["鋼琴", "樂理"],
+        defaultSubject: "鋼琴",
+        phone: "0912345678",
+        contactNote: "以 LINE 聯絡",
+        billingType: "package",
+        totalLessons: 4,
+        usedLessons: 1,
+        notes: "保留備註",
+      },
+      {
+        id: "student_other",
+        name: "陳同學",
+        subject: "鋼琴",
+        billingType: "perLesson",
+      },
+    ],
+    lessons: [
+      {
+        id: "lesson_completed",
+        studentId: "student_target",
+        subject: "鋼琴",
+        date: "2026-09-01",
+        startTime: "10:00",
+        endTime: "11:00",
+        mode: "inPerson",
+        status: "completed",
+        recurrenceGroupId: "series_target",
+        recordId: "record_completed",
+      },
+      {
+        id: "lesson_future_target",
+        studentId: "student_target",
+        subject: "樂理",
+        date: "2026-10-01",
+        startTime: "10:00",
+        endTime: "11:00",
+        mode: "inPerson",
+        status: "scheduled",
+        recurrenceGroupId: "series_shared_for_test",
+      },
+      {
+        id: "lesson_cancelled_target",
+        studentId: "student_target",
+        subject: "鋼琴",
+        date: "2026-10-02",
+        startTime: "10:00",
+        endTime: "11:00",
+        mode: "inPerson",
+        status: "cancelled",
+        recurrenceGroupId: "series_target",
+      },
+      {
+        id: "lesson_future_other",
+        studentId: "student_other",
+        subject: "鋼琴",
+        date: "2026-10-03",
+        startTime: "10:00",
+        endTime: "11:00",
+        mode: "inPerson",
+        status: "scheduled",
+        recurrenceGroupId: "series_shared_for_test",
+      },
+    ],
+    lessonRecords: [{
+      id: "record_completed",
+      lessonId: "lesson_completed",
+      studentId: "student_target",
+      status: "completed",
+      deductLesson: true,
+      note: "歷史紀錄保留",
+    }],
+    lessonCreditTransactions: [
+      { id: "credit_purchase", studentId: "student_target", type: "purchase", amount: 4, reason: "購買堂數" },
+      { id: "credit_deduction", studentId: "student_target", type: "deduction", amount: -1, relatedLessonId: "lesson_completed", reason: "完成課程" },
+    ],
+    settings: domain.defaultSettings(true),
+  }, { now: "2026-09-15T00:00:00.000Z" });
+}
+
+test("student archive and deletion fields migrate to dataVersion 10 idempotently", () => {
+  const first = domain.normalizeData(legacyData(), { now: "2026-09-15T00:00:00.000Z" });
+  assert.equal(first.dataVersion, 10);
+  assert.equal(first.students[0].archivedAt, null);
+  assert.equal(first.students[0].deletedAt, null);
+  const second = domain.normalizeData(first, { now: "2026-09-16T00:00:00.000Z" });
+  assert.equal(second.students[0].archivedAt, null);
+  assert.equal(second.students[0].deletedAt, null);
+  assert.equal(second.lessonCreditTransactions.length, first.lessonCreditTransactions.length);
+
+  first.students[0].archivedAt = "2026-09-15T01:00:00.000Z";
+  first.students[0].deletedAt = "2026-09-15T02:00:00.000Z";
+  const restored = domain.normalizeData(JSON.parse(JSON.stringify(first)));
+  assert.equal(restored.students[0].archivedAt, "2026-09-15T01:00:00.000Z");
+  assert.equal(restored.students[0].deletedAt, "2026-09-15T02:00:00.000Z");
+});
+
+test("renaming keeps the same studentId and preserves credits, lessons, records, recurrence and contact fields", () => {
+  const data = studentManagementData();
+  const before = JSON.parse(JSON.stringify({
+    lessons: data.lessons,
+    lessonRecords: data.lessonRecords,
+    lessonCreditTransactions: data.lessonCreditTransactions,
+    student: data.students.find(item => item.id === "student_target"),
+  }));
+  const renamed = domain.renameStudent(data, {
+    studentId: "student_target",
+    name: "  王小華  ",
+    now: "2026-09-15T01:00:00.000Z",
+  });
+  assert.equal(renamed.id, "student_target");
+  assert.equal(renamed.name, "王小華");
+  assert.equal(data.lessons[0].studentId, "student_target");
+  assert.equal(data.lessons[0].recurrenceGroupId, "series_target");
+  assert.deepEqual(data.lessons, before.lessons);
+  assert.deepEqual(data.lessonRecords, before.lessonRecords);
+  assert.deepEqual(data.lessonCreditTransactions, before.lessonCreditTransactions);
+  assert.equal(renamed.phone, before.student.phone);
+  assert.equal(renamed.contactNote, before.student.contactNote);
+  assert.equal(renamed.notes, before.student.notes);
+  assert.deepEqual(renamed.subjects, before.student.subjects);
+  assert.throws(() => domain.renameStudent(data, { studentId: "student_target", name: "   " }), /請輸入姓名/);
+  assert.throws(() => domain.renameStudent(data, { studentId: "student_target", name: "一".repeat(31) }), /30 個字/);
+});
+
+test("a student without any relation is soft-deleted and restored within eight seconds", () => {
+  const data = studentManagementData();
+  data.students.push({
+    id: "student_empty",
+    name: "誤新增學生",
+    subject: "鋼琴",
+    subjects: ["鋼琴"],
+    defaultSubject: "鋼琴",
+    billingType: "perLesson",
+    archivedAt: null,
+    deletedAt: null,
+  });
+  assert.equal(domain.canPermanentlyDeleteStudent(data, "student_empty"), true);
+  const result = domain.softDeleteStudent(data, {
+    studentId: "student_empty",
+    idFactory: () => "batch_empty_delete",
+    now: "2026-09-15T00:00:00.000Z",
+  });
+  assert.equal(result.deletedLessonCount, 0);
+  assert.equal(data.students.find(item => item.id === "student_empty").deletedAt, "2026-09-15T00:00:00.000Z");
+  const undo = domain.undoBatchOperation(data, {
+    batchOperationId: result.operation.id,
+    now: "2026-09-15T00:00:07.000Z",
+  });
+  assert.equal(undo.restoredStudentCount, 1);
+  assert.equal(data.students.find(item => item.id === "student_empty").deletedAt, null);
+});
+
+test("students with history cannot be directly removed, while archive and restore retain history", () => {
+  const data = studentManagementData();
+  const beforeCounts = {
+    lessons: data.lessons.length,
+    records: data.lessonRecords.length,
+    transactions: data.lessonCreditTransactions.length,
+  };
+  assert.equal(domain.canPermanentlyDeleteStudent(data, "student_target"), false);
+  assert.throws(() => domain.softDeleteStudent(data, {
+    studentId: "student_target",
+    idFactory: () => "batch_forbidden",
+    now: "2026-09-15T00:00:00.000Z",
+  }), /封存或移除未來課程/);
+  domain.archiveStudent(data, { studentId: "student_target", now: "2026-09-15T00:00:00.000Z" });
+  assert.ok(data.students.find(item => item.id === "student_target").archivedAt);
+  assert.deepEqual([data.lessons.length, data.lessonRecords.length, data.lessonCreditTransactions.length], Object.values(beforeCounts));
+  domain.restoreArchivedStudent(data, { studentId: "student_target", now: "2026-09-15T00:01:00.000Z" });
+  assert.equal(data.students.find(item => item.id === "student_target").archivedAt, null);
+});
+
+test("deleting a student removes only that student's future scheduled lessons and undo restores the exact batch", () => {
+  const data = studentManagementData();
+  const usedLessonsBefore = data.students.find(item => item.id === "student_target").usedLessons;
+  const summary = domain.studentRelationSummary(data, "student_target", { now: "2026-09-15T00:00:00.000Z" });
+  assert.equal(summary.futureLessonCount, 1);
+  assert.equal(summary.completedLessonCount, 1);
+  assert.equal(summary.creditTransactionCount, 2);
+  const result = domain.softDeleteStudent(data, {
+    studentId: "student_target",
+    removeFutureLessons: true,
+    idFactory: () => "batch_student_delete",
+    now: "2026-09-15T00:00:00.000Z",
+  });
+  assert.equal(result.deletedLessonCount, 1);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_target").deletedAt, "2026-09-15T00:00:00.000Z");
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_other").deletedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_completed").deletedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_cancelled_target").deletedAt, null);
+  assert.equal(data.lessonRecords[0].deletedAt, null);
+  assert.equal(data.lessonCreditTransactions.length, 2);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_other").recurrenceGroupId, "series_shared_for_test");
+
+  const normalizedWhileDeleted = domain.normalizeData(JSON.parse(JSON.stringify(data)));
+  assert.equal(normalizedWhileDeleted.lessonRecords[0].studentId, "student_target");
+  assert.equal(normalizedWhileDeleted.lessonCreditTransactions[0].studentId, "student_target");
+
+  domain.undoBatchOperation(data, {
+    batchOperationId: result.operation.id,
+    now: "2026-09-15T00:00:07.000Z",
+  });
+  assert.equal(data.students.find(item => item.id === "student_target").deletedAt, null);
+  assert.equal(data.students.find(item => item.id === "student_target").usedLessons, usedLessonsBefore);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_target").deletedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_other").deletedAt, null);
 });
