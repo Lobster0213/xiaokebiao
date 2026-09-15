@@ -803,6 +803,7 @@ test("students with history cannot be directly removed, while archive and restor
     now: "2026-09-15T00:00:00.000Z",
   });
   assert.equal(archived.removedLessonCount, 1);
+  assert.equal(archived.refundedCreditCount, 0);
   assert.ok(data.students.find(item => item.id === "student_target").archivedAt);
   assert.ok(data.lessons.find(item => item.id === "lesson_future_target").deletedAt);
   assert.equal(data.lessons.find(item => item.id === "lesson_future_other").deletedAt, null);
@@ -821,6 +822,43 @@ test("students with history cannot be directly removed, while archive and restor
   domain.restoreArchivedStudent(data, { studentId: "student_target", now: "2026-09-15T00:01:00.000Z" });
   assert.equal(data.students.find(item => item.id === "student_target").archivedAt, null);
   assert.ok(data.lessons.find(item => item.id === "lesson_future_target").deletedAt, "一般恢復不應重新排回舊課程");
+});
+
+test("archiving with a refund clears remaining credits, keeps the ledger, and undo reverses only that refund", () => {
+  const data = studentManagementData();
+  const balanceBefore = domain.creditBalance(data, "student_target");
+  const transactionsBefore = data.lessonCreditTransactions.length;
+  let sequence = 0;
+  const archived = domain.archiveStudent(data, {
+    studentId: "student_target",
+    refundRemainingCredits: true,
+    idFactory: prefix => `${prefix}_archive_refund_${++sequence}`,
+    now: "2026-09-15T00:00:00.000Z",
+  });
+
+  assert.equal(archived.removedLessonCount, 1);
+  assert.equal(archived.refundedCreditCount, balanceBefore);
+  assert.equal(domain.creditBalance(data, "student_target"), 0);
+  assert.ok(data.lessons.find(item => item.id === "lesson_future_target").deletedAt);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_other").deletedAt, null);
+  assert.equal(data.lessonCreditTransactions.length, transactionsBefore + 1);
+  const refund = data.lessonCreditTransactions.find(item => item.id === archived.operation.refundTransactionId);
+  assert.equal(refund.type, "refund");
+  assert.equal(refund.amount, -balanceBefore);
+  assert.equal(refund.batchOperationId, archived.operation.id);
+  assert.equal(refund.reason, "封存學生退費");
+
+  const normalized = domain.normalizeData(JSON.parse(JSON.stringify(data)));
+  assert.equal(normalized.batchOperations.find(item => item.id === archived.operation.id).refundTransactionId, refund.id);
+
+  domain.undoBatchOperation(data, {
+    batchOperationId: archived.operation.id,
+    now: "2026-09-15T00:00:07.000Z",
+  });
+  assert.equal(domain.creditBalance(data, "student_target"), balanceBefore);
+  assert.equal(data.students.find(item => item.id === "student_target").archivedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_target").deletedAt, null);
+  assert.ok(refund.reversedAt);
 });
 
 test("an immediate archive undo restores the student and only that archive batch's future lessons", () => {

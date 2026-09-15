@@ -26,9 +26,19 @@ test("archived and deleted students are excluded from active selectors", () => {
   assert.match(html, /查看封存學生/);
   assert.match(html, /查看歷史課程/);
   assert.match(html, /恢復學生/);
+  assert.match(html, /data-action="archive-student-from-edit"/);
+  assert.match(html, /將\$\{escapeHtml\(student\.name\)\}移至封存資料庫/);
+  assert.match(html, /剩餘堂數是否已退費？/);
+  assert.match(html, /未退費，保留 \$\{remaining\} 堂/);
+  assert.match(html, /已退費，扣除 \$\{remaining\} 堂/);
+  assert.match(html, /未來課程：\$\{summary\.futureLessonCount\} 堂（將從日曆移除）/);
   assert.match(html, /學生已封存，\$\{result\.removedLessonCount\} 堂未來課程已移除/);
   assert.match(html, /handler: \(\) => undoStudentArchive\(result\.operation\.id, studentId\)/);
   assert.match(domainSource, /reason: "studentArchived"/);
+  assert.match(domainSource, /type: "refund"/);
+  assert.match(domainSource, /amount: -refundableCredits/);
+  assert.match(domainSource, /reason: "封存學生退費"/);
+  assert.match(domainSource, /if \(refund\) refund\.reversedAt = now/);
 });
 
 test("student deletion stays soft, reports impact and offers an eight-second exact undo", () => {

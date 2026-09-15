@@ -187,6 +187,26 @@ const studentDetailScreenshotPath = screenshotPath.replace(/\.png$/i, "-student-
 const studentDetailScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 fs.writeFileSync(studentDetailScreenshotPath, Buffer.from(studentDetailScreenshot.data, "base64"));
 await evaluate("document.querySelector('#toast-root').innerHTML = ''");
+await click('[data-action="edit-student"][data-id="stu_wang"]');
+const editArchiveEntry = await evaluate(`({
+  title: document.querySelector('.sheet-header h2')?.textContent || '',
+  hasArchive: Boolean(document.querySelector('[data-action="archive-student-from-edit"][data-id="stu_wang"]'))
+})`);
+if (editArchiveEntry.title !== '編輯學生' || !editArchiveEntry.hasArchive) throw new Error(`Student edit archive entry regression: ${JSON.stringify(editArchiveEntry)}`);
+await click('[data-action="archive-student-from-edit"][data-id="stu_wang"]');
+const archiveConfirmation = await evaluate(`({
+  title: document.querySelector('.sheet-header h2')?.textContent || '',
+  text: document.querySelector('.sheet')?.textContent || '',
+  hasNoRefund: Boolean(document.querySelector('[data-action="confirm-archive-student"][data-refund="false"]')),
+  hasRefund: Boolean(document.querySelector('[data-action="confirm-archive-student"][data-refund="true"]'))
+})`);
+if (archiveConfirmation.title !== '封存王小華？' || !archiveConfirmation.text.includes('將王小華移至封存資料庫') || !archiveConfirmation.text.includes('剩餘堂數是否已退費？') || !archiveConfirmation.text.includes('將從日曆移除') || !archiveConfirmation.hasNoRefund || !archiveConfirmation.hasRefund) {
+  throw new Error(`Student archive confirmation regression: ${JSON.stringify(archiveConfirmation)}`);
+}
+const archiveConfirmationScreenshotPath = screenshotPath.replace(/\.png$/i, "-archive-confirmation.png");
+const archiveConfirmationScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+fs.writeFileSync(archiveConfirmationScreenshotPath, Buffer.from(archiveConfirmationScreenshot.data, "base64"));
+await click('[data-action="close-sheet"]');
 await click('[data-action="delete-student"][data-id="stu_wang"]');
 const deleteSheet = await evaluate(`({
   title: document.querySelector('.sheet-header h2')?.textContent || '',
@@ -201,6 +221,7 @@ const deleteStudentScreenshotPath = screenshotPath.replace(/\.png$/i, "-delete-s
 const deleteStudentScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 fs.writeFileSync(deleteStudentScreenshotPath, Buffer.from(deleteStudentScreenshot.data, "base64"));
 await click('[data-action="archive-student"][data-id="stu_wang"]');
+await click('[data-action="confirm-archive-student"][data-refund="false"]');
 const archivedState = await evaluate(`(() => {
   const data = JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1'));
   const student = data.students.find(item => item.id === 'stu_wang');
@@ -323,5 +344,5 @@ fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
 fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
 
 if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
-console.log(JSON.stringify({ initial, home, notification, beforeRename, renamed, deleteSheet, archivedState, archiveSheet, restoredState, week, monthDays, monthCounts, renamedOnMonth, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
+console.log(JSON.stringify({ initial, home, notification, beforeRename, renamed, editArchiveEntry, archiveConfirmation, deleteSheet, archivedState, archiveSheet, restoredState, week, monthDays, monthCounts, renamedOnMonth, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
 socket.close();

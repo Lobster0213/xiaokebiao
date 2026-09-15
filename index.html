@@ -2120,15 +2120,33 @@ textarea { min-height: 96px; resize: vertical; }
       </div>`);
   }
 
-  function archiveStudent(studentId) {
+  function studentArchiveSheet(student) {
+    if (!student || student.deletedAt || student.archivedAt) return;
+    const summary = Domain.studentRelationSummary(state, student.id, { now: new Date().toISOString() });
+    const remaining = calculateRemainingLessons(student);
+    const hasRefundableCredits = Number.isFinite(remaining) && remaining > 0;
+    openSheet(`封存${student.name}？`, `
+      <div class="form-grid">
+        <div class="repeat-summary"><strong>將${escapeHtml(student.name)}移至封存資料庫</strong><br>未來課程：${summary.futureLessonCount} 堂（將從日曆移除）<br>剩餘堂數：${remaining == null ? "按次計費" : `${remaining} 堂`}</div>
+        ${hasRefundableCredits ? `
+          <div class="field"><label>剩餘堂數是否已退費？</label></div>
+          <button class="btn btn-soft btn-full" data-action="confirm-archive-student" data-id="${student.id}" data-refund="false">未退費，保留 ${remaining} 堂</button>
+          <button class="btn btn-primary btn-full" data-action="confirm-archive-student" data-id="${student.id}" data-refund="true">已退費，扣除 ${remaining} 堂</button>
+        ` : `<button class="btn btn-primary btn-full" data-action="confirm-archive-student" data-id="${student.id}" data-refund="false">確認封存</button>`}
+        <button class="btn btn-soft btn-full" data-action="close-sheet">取消</button>
+      </div>`);
+  }
+
+  function archiveStudent(studentId, refundRemainingCredits = false) {
     try {
-      const result = Domain.archiveStudent(state, { studentId, idFactory: uid, now: new Date().toISOString() });
+      const result = Domain.archiveStudent(state, { studentId, refundRemainingCredits, idFactory: uid, now: new Date().toISOString() });
       saveData();
       closeSheet();
       ui.studentDetailId = null;
       ui.tab = "students";
       render();
-      toast(`學生已封存，${result.removedLessonCount} 堂未來課程已移除`, "success", {
+      const refundMessage = result.refundedCreditCount ? `，${result.refundedCreditCount} 堂已記錄退費` : "";
+      toast(`學生已封存，${result.removedLessonCount} 堂未來課程已移除${refundMessage}`, "success", {
         duration: 8000,
         actions: [{ label: "復原", handler: () => undoStudentArchive(result.operation.id, studentId) }],
       });
@@ -3294,6 +3312,7 @@ textarea { min-height: 96px; resize: vertical; }
         </div>
         <div class="field"><label for="student-notes">備註</label><textarea id="student-notes" name="notes">${escapeHtml(student?.notes || "")}</textarea></div>
         <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">${editing ? "儲存修改" : "新增學生"}</button></div>
+        ${editing ? `<button class="btn btn-soft btn-full" type="button" data-action="archive-student-from-edit" data-id="${student.id}">封存學生</button>` : ""}
       </form>`, root => {
         const form = $("#student-form", root);
         const defaultSubjectSelect = $("#student-default-subject", root);
@@ -4399,7 +4418,9 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "view-archived-student") { closeSheet(); ui.studentDetailId = id; ui.tab = "students"; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
     else if (action === "restore-student") restoreStudent(id);
     else if (action === "delete-student") studentDeleteSheet(studentById(id));
-    else if (action === "archive-student") archiveStudent(id);
+    else if (action === "archive-student") studentArchiveSheet(studentById(id));
+    else if (action === "archive-student-from-edit") { closeSheet(); studentArchiveSheet(studentById(id)); }
+    else if (action === "confirm-archive-student") archiveStudent(id, actionEl.dataset.refund === "true");
     else if (action === "confirm-delete-empty-student") deleteStudent(id, false);
     else if (action === "confirm-delete-student-future") deleteStudent(id, true);
     else if (action === "add-credit") creditSheet(studentById(id));

@@ -425,6 +425,7 @@
         affectedLessonIds,
         affectedStudentIds,
         recurrenceGroupId: operation.recurrenceGroupId && SAFE_ID.test(String(operation.recurrenceGroupId)) ? String(operation.recurrenceGroupId) : null,
+        refundTransactionId: operation.refundTransactionId && SAFE_ID.test(String(operation.refundTransactionId)) ? String(operation.refundTransactionId) : null,
         createdAt: text(operation.createdAt || now, 50),
         undoUntil: text(operation.undoUntil || operation.createdAt || now, 50),
         undoneAt: operation.undoneAt ? text(operation.undoneAt, 50) : null,
@@ -627,6 +628,9 @@
     const idFactory = requireIdFactory(options);
     const summary = studentRelationSummary(data, student.id, { now });
     const targets = summary.futureLessons;
+    const refundableCredits = student.billingType === "package"
+      ? Math.max(0, creditBalance(data, student.id))
+      : 0;
     const operation = createBatchOperation(data, {
       ...options,
       type: "studentArchive",
@@ -653,7 +657,22 @@
         reason: "studentArchived",
       };
     }
-    return { operation, student, removedLessonCount: targets.length };
+    let refundedCreditCount = 0;
+    if (options.refundRemainingCredits === true && refundableCredits > 0) {
+      const { transaction } = addCreditTransaction(data, {
+        id: idFactory("credit"),
+        studentId: student.id,
+        type: "refund",
+        amount: -refundableCredits,
+        reason: "封存學生退費",
+        batchOperationId: operation.id,
+        createdAt: now,
+        isDemoData: Boolean(student.isDemoData),
+      });
+      operation.refundTransactionId = transaction.id;
+      refundedCreditCount = refundableCredits;
+    }
+    return { operation, student, removedLessonCount: targets.length, refundedCreditCount };
   }
 
   function restoreArchivedStudent(data, options) {
@@ -1373,6 +1392,15 @@
         lesson.deletedAt = beforeLesson?.deletedAt || null;
         lesson.deletion = beforeLesson?.deletion || null;
         lesson.updatedAt = now;
+      }
+      if (operation.refundTransactionId) {
+        const refund = (data.lessonCreditTransactions || []).find(transaction =>
+          transaction.id === operation.refundTransactionId
+          && transaction.batchOperationId === operation.id
+          && transaction.type === "refund"
+          && !transaction.reversedAt
+        );
+        if (refund) refund.reversedAt = now;
       }
     } else if (operation.type === "studentDelete") {
       const beforeStudents = new Map((operation.before?.students || []).map(item => [item.id, clone(item)]));
