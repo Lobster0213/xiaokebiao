@@ -7,7 +7,7 @@
 - Web／PWA：`index.html`、`app-domain.js`、`manifest.webmanifest`、`service-worker.js`
 - Android：`android/` 內的原生 WebView 包裝層，最低 Android 8（API 26）
 - 資料：保留原本 `localStorage` key `xiaokebiao_mvp_v1`
-- 集中資料版本：`dataVersion: 9`
+- 集中資料版本：`dataVersion: 10`
 - 部署：推送 `main` 後由 GitHub Actions 更新 GitHub Pages
 - Android Release：推送 `v*` tag 後建置簽章 APK；含 `-rc` 等後綴的 tag 發布為 Prerelease，正式 tag 發布為 Latest Release
 
@@ -31,6 +31,7 @@ Web 版不需要 npm 才能使用；直接開啟 `index.html` 即可。本機檔
 - 首頁維持單一「今日課程」清單，不要求按「開始上課」或「記一堂」
 - 30、45、60、90、120、180 分鐘與 15～360 分鐘自訂時長，結束時間自動計算且禁止跨越午夜
 - 學生支援多科目、預設科目與跨科目搜尋
+- 學生姓名可直接修改且保留原 `studentId`；可封存、恢復或安全刪除學生與其未來課程
 - 月視圖直接顯示每日有效課程堂數；取消與已改期原紀錄不計入
 - 單堂、這堂與之後、整個固定系列的改期範圍，並保留改期歷程
 - 試教課程與轉正式學生流程

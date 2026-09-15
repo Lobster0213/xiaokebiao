@@ -22,3 +22,4 @@ dist/*.sha256
 Thumbs.db
 .dev.vars
 .wrangler/
+.student-browser-profile*/
