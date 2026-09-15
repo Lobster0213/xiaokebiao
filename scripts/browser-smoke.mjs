@@ -147,6 +147,119 @@ if (guide.title !== "使用教學" || !guide.text.includes("啟用遠端推播")
   throw new Error(`Guide regression: ${JSON.stringify(guide)}`);
 }
 await evaluate("document.querySelector('[data-action=\"close-sheet\"]')?.click()");
+await click('[data-tab="students"]');
+await click('[data-action="open-student"][data-id="stu_wang"]');
+const beforeRename = await evaluate(`(() => {
+  const data = JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1'));
+  const student = data.students.find(item => item.id === 'stu_wang');
+  return {
+    studentId: student.id,
+    balance: data.lessonCreditTransactions.filter(item => item.studentId === student.id && !item.reversedAt).reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    lessons: data.lessons.filter(item => item.studentId === student.id).length,
+    transactions: data.lessonCreditTransactions.filter(item => item.studentId === student.id).length
+  };
+})()`);
+await click('[data-action="edit-student"][data-id="stu_wang"]');
+await evaluate(`(() => {
+  const input = document.querySelector('#student-name');
+  input.value = '  王小華  ';
+  document.querySelector('#student-form').requestSubmit();
+})()`);
+await delay(150);
+const renamed = await evaluate(`(() => {
+  const data = JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1'));
+  const student = data.students.find(item => item.id === 'stu_wang');
+  return {
+    detailName: document.querySelector('.detail-title h1')?.textContent || '',
+    toast: document.querySelector('#toast-root')?.textContent || '',
+    studentId: student.id,
+    name: student.name,
+    balance: data.lessonCreditTransactions.filter(item => item.studentId === student.id && !item.reversedAt).reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    lessons: data.lessons.filter(item => item.studentId === student.id).length,
+    transactions: data.lessonCreditTransactions.filter(item => item.studentId === student.id).length,
+    detailText: document.querySelector('.detail-hero')?.textContent || ''
+  };
+})()`);
+if (renamed.detailName !== '王小華' || renamed.name !== '王小華' || renamed.studentId !== beforeRename.studentId || renamed.balance !== beforeRename.balance || renamed.lessons !== beforeRename.lessons || renamed.transactions !== beforeRename.transactions || !renamed.toast.includes('學生資料已更新') || renamed.detailText.includes('全部科目：') || renamed.detailText.includes('預設：')) {
+  throw new Error(`Student rename regression: ${JSON.stringify({ beforeRename, renamed })}`);
+}
+const studentDetailScreenshotPath = screenshotPath.replace(/\.png$/i, "-student-detail.png");
+const studentDetailScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+fs.writeFileSync(studentDetailScreenshotPath, Buffer.from(studentDetailScreenshot.data, "base64"));
+await evaluate("document.querySelector('#toast-root').innerHTML = ''");
+await click('[data-action="edit-student"][data-id="stu_wang"]');
+const editArchiveEntry = await evaluate(`({
+  title: document.querySelector('.sheet-header h2')?.textContent || '',
+  hasArchive: Boolean(document.querySelector('[data-action="archive-student-from-edit"][data-id="stu_wang"]'))
+})`);
+if (editArchiveEntry.title !== '編輯學生' || !editArchiveEntry.hasArchive) throw new Error(`Student edit archive entry regression: ${JSON.stringify(editArchiveEntry)}`);
+await click('[data-action="archive-student-from-edit"][data-id="stu_wang"]');
+const archiveConfirmation = await evaluate(`({
+  title: document.querySelector('.sheet-header h2')?.textContent || '',
+  text: document.querySelector('.sheet')?.textContent || '',
+  hasNoRefund: Boolean(document.querySelector('[data-action="confirm-archive-student"][data-refund="false"]')),
+  hasRefund: Boolean(document.querySelector('[data-action="confirm-archive-student"][data-refund="true"]'))
+})`);
+if (archiveConfirmation.title !== '封存王小華？' || !archiveConfirmation.text.includes('將王小華移至封存資料庫') || !archiveConfirmation.text.includes('剩餘堂數是否已退費？') || !archiveConfirmation.text.includes('將從日曆移除') || !archiveConfirmation.hasNoRefund || !archiveConfirmation.hasRefund) {
+  throw new Error(`Student archive confirmation regression: ${JSON.stringify(archiveConfirmation)}`);
+}
+const archiveConfirmationScreenshotPath = screenshotPath.replace(/\.png$/i, "-archive-confirmation.png");
+const archiveConfirmationScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+fs.writeFileSync(archiveConfirmationScreenshotPath, Buffer.from(archiveConfirmationScreenshot.data, "base64"));
+await click('[data-action="close-sheet"]');
+await click('[data-action="delete-student"][data-id="stu_wang"]');
+const deleteSheet = await evaluate(`({
+  title: document.querySelector('.sheet-header h2')?.textContent || '',
+  text: document.querySelector('.sheet')?.textContent || '',
+  hasArchive: Boolean(document.querySelector('[data-action="archive-student"]')),
+  hasDeleteFuture: Boolean(document.querySelector('[data-action="confirm-delete-student-future"]'))
+})`);
+if (deleteSheet.title !== '刪除王小華？' || !deleteSheet.text.includes('未來課程：') || !deleteSheet.text.includes('已完成課程：') || !deleteSheet.text.includes('堂數異動紀錄：') || !deleteSheet.hasArchive || !deleteSheet.hasDeleteFuture) {
+  throw new Error(`Student delete confirmation regression: ${JSON.stringify(deleteSheet)}`);
+}
+const deleteStudentScreenshotPath = screenshotPath.replace(/\.png$/i, "-delete-student.png");
+const deleteStudentScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+fs.writeFileSync(deleteStudentScreenshotPath, Buffer.from(deleteStudentScreenshot.data, "base64"));
+await click('[data-action="archive-student"][data-id="stu_wang"]');
+await click('[data-action="confirm-archive-student"][data-refund="false"]');
+const archivedState = await evaluate(`(() => {
+  const data = JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1'));
+  const student = data.students.find(item => item.id === 'stu_wang');
+  const futureLesson = data.lessons.find(item => item.id === 'lesson_demo_5');
+  return {
+    hiddenFromList: !document.body.textContent.includes('王小華'),
+    archived: Boolean(student.archivedAt),
+    futureLessonRemoved: Boolean(futureLesson.deletedAt),
+    balance: data.lessonCreditTransactions.filter(item => item.studentId === student.id && !item.reversedAt).reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    toast: document.querySelector('#toast-root')?.textContent || ''
+  };
+})()`);
+if (!archivedState.hiddenFromList || !archivedState.archived || !archivedState.futureLessonRemoved || archivedState.balance !== beforeRename.balance || !archivedState.toast.includes('1 堂未來課程已移除')) {
+  throw new Error(`Student archive behavior regression: ${JSON.stringify(archivedState)}`);
+}
+await evaluate("document.querySelector('#toast-root').innerHTML = ''");
+await click('[data-action="view-archived-students"]');
+const archiveSheet = await evaluate(`({
+  text: document.querySelector('.sheet')?.textContent || '',
+  canRestore: Boolean(document.querySelector('[data-action="restore-student"][data-id="stu_wang"]')),
+  canViewHistory: Boolean(document.querySelector('[data-action="view-archived-student"][data-id="stu_wang"]'))
+})`);
+if (!archiveSheet.text.includes('王小華') || !archiveSheet.canRestore || !archiveSheet.canViewHistory) throw new Error(`Archived student sheet regression: ${JSON.stringify(archiveSheet)}`);
+const archivedStudentScreenshotPath = screenshotPath.replace(/\.png$/i, "-archived-students.png");
+const archivedStudentScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+fs.writeFileSync(archivedStudentScreenshotPath, Buffer.from(archivedStudentScreenshot.data, "base64"));
+await click('[data-action="restore-student"][data-id="stu_wang"]');
+const restoredState = await evaluate(`(() => {
+  const data = JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1'));
+  return {
+    archived: Boolean(data.students.find(item => item.id === 'stu_wang').archivedAt),
+    oldFutureLessonStillRemoved: Boolean(data.lessons.find(item => item.id === 'lesson_demo_5').deletedAt)
+  };
+})()`);
+if (restoredState.archived || !restoredState.oldFutureLessonStillRemoved) throw new Error(`Archived student restore regression: ${JSON.stringify(restoredState)}`);
+await click('[data-tab="home"]');
+const renamedOnHome = await evaluate("document.body.textContent.includes('王小華')");
+if (!renamedOnHome) throw new Error('Renamed student did not update on home');
 await evaluate(`(() => {
   const key = 'xiaokebiao_mvp_v1';
   const data = JSON.parse(localStorage.getItem(key));
@@ -172,9 +285,10 @@ const week = await evaluate(`({
   hint: document.querySelector('.calendar-hint')?.textContent || '',
   hasDayAgenda: Boolean(document.querySelector('.day-agenda')),
   hasFilter: Boolean(document.querySelector('[data-action="schedule-filter"]')),
-  dataVersion: JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1')).dataVersion
+  dataVersion: JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1')).dataVersion,
+  renamedStudentVisible: document.body.textContent.includes('王小華')
 })`);
-if (week.days !== 7 || week.mondayFirst !== "週一" || week.calendarView !== "true" || week.lastDayRight > 390 || week.timeFont < 9 || week.nameFont < 10 || !week.hint.includes("05:00–24:00") || !week.hasDayAgenda || !week.hasFilter || week.dataVersion !== 9) {
+if (week.days !== 7 || week.mondayFirst !== "週一" || week.calendarView !== "true" || week.lastDayRight > 390 || week.timeFont < 9 || week.nameFont < 10 || !week.hint.includes("05:00–24:00") || !week.hasDayAgenda || !week.hasFilter || week.dataVersion !== 10 || !week.renamedStudentVisible) {
   throw new Error(`Seven-day week regression: ${JSON.stringify(week)}`);
 }
 const weekScreenshotPath = screenshotPath.replace(/\.png$/i, "-week.png");
@@ -192,6 +306,8 @@ const monthDays = await evaluate("document.querySelectorAll('.month-day').length
 if (monthDays !== 42) throw new Error(`Month grid expected 42 cells, got ${monthDays}`);
 const monthCounts = await evaluate("document.querySelectorAll('.month-count').length");
 if (monthCounts < 1) throw new Error("Month cells do not expose daily lesson counts");
+const renamedOnMonth = await evaluate("document.querySelector('.day-agenda')?.textContent.includes('王小華') || false");
+if (!renamedOnMonth) throw new Error("Renamed student did not update in month day agenda");
 
 await click('[data-action="add-calendar-lesson"]');
 await click('input[name="lessonType"][value="trial"]');
@@ -228,5 +344,5 @@ fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
 fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
 
 if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
-console.log(JSON.stringify({ initial, home, notification, week, monthDays, monthCounts, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
+console.log(JSON.stringify({ initial, home, notification, beforeRename, renamed, editArchiveEntry, archiveConfirmation, deleteSheet, archivedState, archiveSheet, restoredState, week, monthDays, monthCounts, renamedOnMonth, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
 socket.close();

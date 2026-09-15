@@ -1097,7 +1097,7 @@ textarea { min-height: 96px; resize: vertical; }
   const CALENDAR_VIEW_KEY = "xiaokebiao_calendar_view_v1";
   const PWA_UPDATE_COMPLETED_KEY = "xiaokebiao_pwa_update_completed_v1";
   const PUSH_API_BASE_URL = String(window.XIAOKEBIAO_PUSH_CONFIG?.apiBaseUrl || "").replace(/\/$/, "");
-  const APP_VERSION = "0.8.2";
+  const APP_VERSION = "0.8.3";
   const DATA_VERSION = Domain.DATA_VERSION;
   const WEEK_START_HOUR = 8;
   const WEEK_END_HOUR = 23;
@@ -1454,16 +1454,17 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function recentStudents(limit = 4) {
+    const selectableIds = new Set(activeStudents().map(student => student.id));
     const seen = new Set();
     const ordered = [...state.lessons]
       .sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`))
       .map(lesson => lesson.studentId)
       .filter(id => {
-        if (seen.has(id) || !studentById(id)) return false;
+        if (seen.has(id) || !selectableIds.has(id)) return false;
         seen.add(id);
         return true;
       });
-    for (const student of state.students) {
+    for (const student of activeStudents()) {
       if (!seen.has(student.id)) ordered.push(student.id);
     }
     return ordered.slice(0, limit).map(studentById).filter(Boolean);
@@ -1476,6 +1477,8 @@ textarea { min-height: 96px; resize: vertical; }
   }
 
   function studentById(id) { return state.students.find(s => s.id === id); }
+  function activeStudents() { return state.students.filter(student => !student.archivedAt && !student.deletedAt); }
+  function archivedStudents() { return state.students.filter(student => student.archivedAt && !student.deletedAt); }
   function lessonById(id) { return state.lessons.find(l => l.id === id); }
   function recordByLessonId(id) { return state.lessonRecords.find(r => r.lessonId === id && !r.deletedAt); }
   function activeLessons() { return state.lessons.filter(lesson => !lesson.deletedAt); }
@@ -1682,7 +1685,7 @@ textarea { min-height: 96px; resize: vertical; }
     const studentIds = [...new Set(todayLessons.filter(lesson => lesson.lessonType !== "trial").map(lesson => lesson.studentId))];
     for (const studentId of studentIds) {
       const student = studentById(studentId);
-      if (!student || student.billingType !== "package") continue;
+      if (!student || student.archivedAt || student.deletedAt || student.billingType !== "package") continue;
       const studentLessons = todayLessons.filter(lesson => lesson.studentId === studentId);
       const completedDeduction = studentLessons.find(lesson => recordByLessonId(lesson.id)?.deductLesson);
       const balance = calculateRemainingLessons(student);
@@ -2032,18 +2035,25 @@ textarea { min-height: 96px; resize: vertical; }
 
   function renderStudents() {
     const term = ui.search.trim().toLowerCase();
-    const students = state.students.filter(s => !term || `${s.name} ${(s.subjects || [s.subject]).join(" ")} ${s.phone || ""}`.toLowerCase().includes(term));
+    const students = activeStudents().filter(s => !term || `${s.name} ${(s.subjects || [s.subject]).join(" ")} ${s.phone || ""}`.toLowerCase().includes(term));
+    const archivedCount = archivedStudents().length;
     return `
       ${topbar()}
       <div class="page-title-row"><h1>學生</h1><button class="btn btn-primary" data-action="add-student" data-tour-id="add-student">＋ 新增學生</button></div>
       <div class="search-row"><input id="student-search" type="search" placeholder="搜尋姓名、科目或電話" value="${escapeHtml(ui.search)}" aria-label="搜尋學生" /></div>
       <div class="card-list">${students.length ? students.map(studentCard).join("") : emptyState("找不到學生", term ? "換個關鍵字試試看。" : "先新增第一位學生吧。", term ? "" : "新增學生", "add-student")}</div>
+      <section class="section"><button class="btn btn-soft btn-full" data-action="view-archived-students">查看封存學生${archivedCount ? `（${archivedCount}）` : ""}</button></section>
       ${bottomNav()}`;
   }
 
   function renderStudentDetail(studentId) {
     const student = studentById(studentId);
     if (!student) {
+      ui.studentDetailId = null;
+      ui.tab = "students";
+      return renderStudents();
+    }
+    if (student.deletedAt) {
       ui.studentDetailId = null;
       ui.tab = "students";
       return renderStudents();
@@ -2057,10 +2067,10 @@ textarea { min-height: 96px; resize: vertical; }
       .filter(transaction => transaction.studentId === student.id)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return `
-      <div class="page-title-row"><button class="back-btn" data-action="back-students" aria-label="返回學生列表">←</button><h1 style="flex:1;text-align:center">學生資料</h1><span style="width:42px"></span></div>
+      <div class="page-title-row"><button class="back-btn" data-action="back-students" aria-label="返回學生列表">←</button><h1 style="flex:1;text-align:center">${student.archivedAt ? "封存學生" : "學生資料"}</h1><span style="width:42px"></span></div>
       <section class="detail-hero">
         <div class="detail-title"><div class="avatar">${escapeHtml(initials(student.name))}</div><div><h1>${escapeHtml(student.name)}</h1><div class="lesson-meta">${escapeHtml(studentSubjectSummary(student))}${student.phone ? ` · ${escapeHtml(student.phone)}` : ""}</div></div></div>
-        <p class="subject-summary" style="margin:12px 2px 0">全部科目：${escapeHtml((student.subjects || [student.subject]).join("、"))}；預設：${escapeHtml(student.defaultSubject || student.subject)}</p>
+        ${student.archivedAt ? `<div class="warning" style="margin-top:12px">此學生已封存，歷史課程與堂數紀錄仍保留。</div>` : ""}
         <div class="detail-grid">
           <div class="info-cell"><small>剩餘可用堂數</small><strong>${remaining == null ? "按次計費" : remaining}</strong></div>
           <div class="info-cell"><small>未來已排堂數</small><strong>${futureLessons.length}</strong></div>
@@ -2070,7 +2080,9 @@ textarea { min-height: 96px; resize: vertical; }
           <div class="info-cell"><small>每堂費用</small><strong>${money(student.pricePerLesson)}</strong></div>
         </div>
         ${remaining !== null && futureLessons.length > remaining ? `<div class="warning">⚠ 未來已排 ${futureLessons.length} 堂，大於剩餘 ${remaining} 堂。這只是提醒，不會阻止排課。</div>` : ""}
-        <div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯資料</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button>${student.billingType === "package" ? `<button class="btn btn-soft" data-action="student-deduction-policy" data-id="${student.id}">扣堂規則</button><button class="btn btn-soft" data-action="add-credit" data-id="${student.id}">＋ 新增堂數</button>` : ""}</div>
+        ${student.archivedAt
+          ? `<div class="detail-actions"><button class="btn btn-primary btn-full" data-action="restore-student" data-id="${student.id}">恢復學生</button></div>`
+          : `<div class="detail-actions"><button class="btn btn-soft" data-action="edit-student" data-id="${student.id}">編輯學生</button><button class="btn btn-primary" data-action="add-lesson" data-student-id="${student.id}">新增課程</button>${student.billingType === "package" ? `<button class="btn btn-soft" data-action="student-deduction-policy" data-id="${student.id}">扣堂規則</button><button class="btn btn-soft" data-action="add-credit" data-id="${student.id}">＋ 新增堂數</button>` : ""}</div>`}
         ${student.contactNote ? `<p class="lesson-meta" style="margin:14px 2px 0">聯絡備註：${escapeHtml(student.contactNote)}</p>` : ""}
         ${student.notes ? `<p class="lesson-meta" style="margin:8px 2px 0">學生備註：${escapeHtml(student.notes)}</p>` : ""}
       </section>
@@ -2080,7 +2092,132 @@ textarea { min-height: 96px; resize: vertical; }
       ${student.billingType === "package" ? `<section class="section"><div class="section-heading"><h2>堂數異動</h2><span class="subtle">${transactions.length} 筆</span></div>
         <div class="card-list">${transactions.length ? transactions.map(transaction => `<article class="record-card"><div class="record-row"><div><h3>${escapeHtml(CREDIT_TYPE_LABELS[transaction.type] || transaction.type)}${transaction.reversedAt ? "（已撤銷）" : ""}</h3><div class="lesson-meta">${escapeHtml(new Date(transaction.createdAt).toLocaleString("zh-TW"))}${transaction.reason ? ` · ${escapeHtml(transaction.reason)}` : ""}</div></div><strong style="color:${transaction.amount >= 0 ? "var(--green)" : "var(--red)"}">${transaction.amount > 0 ? "+" : ""}${transaction.amount}</strong></div></article>`).join("") : emptyState("還沒有堂數異動", "新增堂數或完成扣堂後會顯示在這裡。")}</div>
       </section>` : ""}
+      ${student.archivedAt ? "" : `<section class="section"><div class="section-heading"><h2>更多操作</h2></div><button class="btn btn-danger btn-full" data-action="delete-student" data-id="${student.id}">刪除學生</button></section>`}
       ${bottomNav()}`;
+  }
+
+  function archivedStudentsSheet() {
+    const students = archivedStudents().sort((first, second) => first.name.localeCompare(second.name, "zh-Hant"));
+    openSheet("封存學生", students.length ? `
+      <div class="card-list">${students.map(student => `<article class="record-card">
+        <div class="record-row"><div><h3>${escapeHtml(student.name)}</h3><div class="lesson-meta">${escapeHtml(studentSubjectSummary(student))}</div></div></div>
+        <div class="detail-actions"><button class="btn btn-soft" data-action="view-archived-student" data-id="${student.id}">查看歷史課程</button><button class="btn btn-primary" data-action="restore-student" data-id="${student.id}">恢復學生</button></div>
+      </article>`).join("")}</div>` : emptyState("沒有封存學生", "封存的學生會出現在這裡。"));
+  }
+
+  function studentDeleteSheet(student) {
+    if (!student || student.deletedAt || student.archivedAt) return;
+    const summary = Domain.studentRelationSummary(state, student.id, { now: new Date().toISOString() });
+    const counts = `<div class="repeat-summary"><strong>相關資料</strong><br>未來課程：${summary.futureLessonCount} 堂<br>已完成課程：${summary.completedLessonCount} 堂<br>堂數異動紀錄：${summary.creditTransactionCount} 筆</div>`;
+    openSheet(`刪除${student.name}？`, `
+      <div class="form-grid">
+        ${counts}
+        ${summary.hasAnyRelation ? `
+          <button class="btn btn-primary btn-full" data-action="archive-student" data-id="${student.id}">封存學生（建議）</button>
+          <button class="btn btn-danger btn-full" data-action="confirm-delete-student-future" data-id="${student.id}">刪除學生並移除未來課程</button>
+        ` : `<button class="btn btn-danger btn-full" data-action="confirm-delete-empty-student" data-id="${student.id}">刪除學生</button>`}
+        <button class="btn btn-soft btn-full" data-action="close-sheet">取消</button>
+      </div>`);
+  }
+
+  function studentArchiveSheet(student) {
+    if (!student || student.deletedAt || student.archivedAt) return;
+    const summary = Domain.studentRelationSummary(state, student.id, { now: new Date().toISOString() });
+    const remaining = calculateRemainingLessons(student);
+    const hasRefundableCredits = Number.isFinite(remaining) && remaining > 0;
+    openSheet(`封存${student.name}？`, `
+      <div class="form-grid">
+        <div class="repeat-summary"><strong>將${escapeHtml(student.name)}移至封存資料庫</strong><br>未來課程：${summary.futureLessonCount} 堂（將從日曆移除）<br>剩餘堂數：${remaining == null ? "按次計費" : `${remaining} 堂`}</div>
+        ${hasRefundableCredits ? `
+          <div class="field"><label>剩餘堂數是否已退費？</label></div>
+          <button class="btn btn-soft btn-full" data-action="confirm-archive-student" data-id="${student.id}" data-refund="false">未退費，保留 ${remaining} 堂</button>
+          <button class="btn btn-primary btn-full" data-action="confirm-archive-student" data-id="${student.id}" data-refund="true">已退費，扣除 ${remaining} 堂</button>
+        ` : `<button class="btn btn-primary btn-full" data-action="confirm-archive-student" data-id="${student.id}" data-refund="false">確認封存</button>`}
+        <button class="btn btn-soft btn-full" data-action="close-sheet">取消</button>
+      </div>`);
+  }
+
+  function archiveStudent(studentId, refundRemainingCredits = false) {
+    try {
+      const result = Domain.archiveStudent(state, { studentId, refundRemainingCredits, idFactory: uid, now: new Date().toISOString() });
+      saveData();
+      closeSheet();
+      ui.studentDetailId = null;
+      ui.tab = "students";
+      render();
+      const refundMessage = result.refundedCreditCount ? `，${result.refundedCreditCount} 堂已記錄退費` : "";
+      toast(`學生已封存，${result.removedLessonCount} 堂未來課程已移除${refundMessage}`, "success", {
+        duration: 8000,
+        actions: [{ label: "復原", handler: () => undoStudentArchive(result.operation.id, studentId) }],
+      });
+    } catch (error) {
+      toast(error.message || "無法封存學生", "error");
+    }
+  }
+
+  function undoStudentArchive(batchOperationId, studentId) {
+    try {
+      Domain.undoBatchOperation(state, { batchOperationId, now: new Date().toISOString() });
+      saveData();
+      ui.studentDetailId = studentId;
+      ui.tab = "students";
+      render();
+      toast("學生與未來課程已復原");
+    } catch (error) {
+      toast(error.message || "無法復原封存", "error");
+    }
+  }
+
+  function restoreStudent(studentId) {
+    try {
+      Domain.restoreArchivedStudent(state, { studentId, now: new Date().toISOString() });
+      saveData();
+      closeSheet();
+      ui.studentDetailId = studentId;
+      ui.tab = "students";
+      render();
+      toast("學生已恢復");
+    } catch (error) {
+      toast(error.message || "無法恢復學生", "error");
+    }
+  }
+
+  function undoStudentDeletion(batchOperationId, studentId) {
+    try {
+      Domain.undoBatchOperation(state, { batchOperationId, now: new Date().toISOString() });
+      saveData();
+      ui.studentDetailId = studentId;
+      ui.tab = "students";
+      render();
+      toast("學生與本次移除的課程已復原");
+    } catch (error) {
+      toast(error.message || "無法復原學生", "error");
+    }
+  }
+
+  function deleteStudent(studentId, removeFutureLessons) {
+    try {
+      const result = Domain.softDeleteStudent(state, {
+        studentId,
+        removeFutureLessons,
+        idFactory: uid,
+        now: new Date().toISOString(),
+      });
+      saveData();
+      closeSheet();
+      ui.studentDetailId = null;
+      ui.tab = "students";
+      render();
+      const message = removeFutureLessons
+        ? `學生及 ${result.deletedLessonCount} 堂未來課程已刪除`
+        : "學生已刪除";
+      toast(message, "success", {
+        duration: 8000,
+        actions: [{ label: "復原", handler: () => undoStudentDeletion(result.operation.id, studentId) }],
+      });
+    } catch (error) {
+      toast(error.message || "無法刪除學生", "error");
+    }
   }
 
   function formatFileSize(bytes) {
@@ -2566,7 +2703,7 @@ textarea { min-height: 96px; resize: vertical; }
     const subjects = [...new Set(activeLessons().map(lesson => lesson.subject).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
     openSheet("課表篩選", `
       <form id="schedule-filter-form" class="form-grid">
-        <div class="field"><label for="filter-student">學生</label><select id="filter-student" name="studentId"><option value="">全部學生</option>${state.students.map(student => `<option value="${student.id}" ${current.studentId === student.id ? "selected" : ""}>${escapeHtml(student.name)}</option>`).join("")}</select></div>
+        <div class="field"><label for="filter-student">學生</label><select id="filter-student" name="studentId"><option value="">全部學生</option>${activeStudents().map(student => `<option value="${student.id}" ${current.studentId === student.id ? "selected" : ""}>${escapeHtml(student.name)}</option>`).join("")}</select></div>
         <div class="field"><label for="filter-subject">科目</label><select id="filter-subject" name="subject"><option value="">全部科目</option>${subjects.map(subject => `<option value="${escapeHtml(subject)}" ${current.subject === subject ? "selected" : ""}>${escapeHtml(subject)}</option>`).join("")}</select></div>
         <div class="field"><label for="filter-status">狀態</label><select id="filter-status" name="status"><option value="">全部狀態</option>${Object.entries(STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${current.status === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></div>
         <div class="detail-actions"><button class="btn btn-soft" type="button" data-action="clear-schedule-filter">清除篩選</button><button class="btn btn-primary" type="submit">套用篩選</button></div>
@@ -3159,7 +3296,7 @@ textarea { min-height: 96px; resize: vertical; }
     const initialDuration = Domain.normalizeDuration(student?.defaultDuration || state.teacherProfile?.defaultDuration || 60);
     openSheet(editing ? "編輯學生" : "新增學生", `
       <form id="student-form" class="form-grid" novalidate>
-        <div class="field"><label for="student-name">姓名 *</label><input id="student-name" name="name" value="${escapeHtml(student?.name || "")}" required /><div class="form-error" data-error="name"></div></div>
+        <div class="field"><label for="student-name">姓名 *</label><input id="student-name" name="name" maxlength="30" value="${escapeHtml(student?.name || "")}" required /><div class="form-error" data-error="name"></div></div>
         <div class="field"><label>授課科目（至少一項）*</label><div class="subject-picker">${subjectChoices.map(subject => `<button class="subject-chip ${currentSubjects.includes(subject) ? "selected" : ""}" type="button" data-student-subject="${escapeHtml(subject)}" aria-pressed="${currentSubjects.includes(subject)}">${escapeHtml(subject)}</button>`).join("")}</div><input id="student-custom-subjects" style="margin-top:8px" placeholder="其他科目，可用頓號分隔"><div class="form-error" data-error="subject"></div></div>
         <div class="field"><label for="student-default-subject">預設科目</label><select id="student-default-subject" name="defaultSubject"></select><div class="help">新增課程時會先選這一科，仍可改成其他科目。</div></div>
         <div class="field"><label for="student-phone">聯絡電話</label><input id="student-phone" name="phone" inputmode="tel" value="${escapeHtml(student?.phone || "")}" /></div>
@@ -3175,6 +3312,7 @@ textarea { min-height: 96px; resize: vertical; }
         </div>
         <div class="field"><label for="student-notes">備註</label><textarea id="student-notes" name="notes">${escapeHtml(student?.notes || "")}</textarea></div>
         <div class="sheet-footer"><button class="btn btn-primary btn-full" type="submit">${editing ? "儲存修改" : "新增學生"}</button></div>
+        ${editing ? `<button class="btn btn-soft btn-full" type="button" data-action="archive-student-from-edit" data-id="${student.id}">封存學生</button>` : ""}
       </form>`, root => {
         const form = $("#student-form", root);
         const defaultSubjectSelect = $("#student-default-subject", root);
@@ -3207,7 +3345,7 @@ textarea { min-height: 96px; resize: vertical; }
         form.addEventListener("submit", e => {
           e.preventDefault();
           const fd = new FormData(form);
-          const name = String(fd.get("name") || "").trim();
+          const rawName = String(fd.get("name") || "");
           const subjects = selectedSubjects();
           const defaultSubject = subjects.includes(String(fd.get("defaultSubject") || "")) ? String(fd.get("defaultSubject")) : (subjects[0] || "");
           const billingType = fd.get("billingType");
@@ -3215,13 +3353,16 @@ textarea { min-height: 96px; resize: vertical; }
           const defaultDuration = fd.get("defaultDuration") === "custom" ? Number(fd.get("customDuration")) : Number(fd.get("defaultDuration"));
           $$('[data-error]', form).forEach(x => x.textContent = "");
           let ok = true;
-          if (!name) { $('[data-error="name"]', form).textContent = "請輸入姓名"; ok = false; }
+          let name = "";
+          try { name = Domain.normalizeStudentName(rawName); }
+          catch (error) { $('[data-error="name"]', form).textContent = error.message || "請輸入姓名"; ok = false; }
           if (!subjects.length) { $('[data-error="subject"]', form).textContent = "請至少選擇或輸入一個科目"; ok = false; }
           if (!Number.isInteger(defaultDuration) || defaultDuration < 15 || defaultDuration > 360) { $('[data-error="subject"]', form).textContent = "自訂時長必須是 15～360 分鐘的整數"; ok = false; }
           if (billingType === "package" && (!Number.isInteger(totalLessons) || totalLessons < 1)) { $('[data-error="totalLessons"]', form).textContent = "請輸入有效堂數"; ok = false; }
           if (!ok) return;
           const now = new Date().toISOString();
           const next = {
+            ...(student || {}),
             id: student?.id || uid("stu"),
             name,
             subject: defaultSubject,
@@ -3237,11 +3378,15 @@ textarea { min-height: 96px; resize: vertical; }
             deductionPolicy: Domain.normalizeStudentDeductionPolicy(student?.deductionPolicy),
             notes: String(fd.get("notes") || "").trim(),
             isDemoData: Boolean(student?.isDemoData),
+            archivedAt: student?.archivedAt || null,
+            deletedAt: student?.deletedAt || null,
+            deletionBatchOperationId: student?.deletionBatchOperationId || null,
             createdAt: student?.createdAt || now,
             updatedAt: now,
           };
           if (editing) {
             state.students = state.students.map(s => s.id === student.id ? next : s);
+            Domain.renameStudent(state, { studentId: student.id, name, now });
             const previousTotal = student.billingType === "package" ? Number(student.totalLessons || 0) : 0;
             const nextTotal = billingType === "package" ? Number(totalLessons || 0) : 0;
             const adjustment = nextTotal - previousTotal;
@@ -3371,9 +3516,15 @@ textarea { min-height: 96px; resize: vertical; }
     if (rescheduling) markContextTip("rescheduleScope");
     const copying = Boolean(templateLesson) && !editing;
     const recents = recentStudents(4);
-    const selectedStudentId = lesson?.studentId || templateLesson?.studentId || presetStudentId || recents[0]?.id || state.students[0]?.id || "";
+    const activeStudentList = activeStudents();
+    const editingStudent = lesson?.studentId ? studentById(lesson.studentId) : null;
+    const selectableStudents = editingStudent && !activeStudentList.some(student => student.id === editingStudent.id)
+      ? [editingStudent, ...activeStudentList]
+      : activeStudentList;
+    const requestedStudentId = lesson?.studentId || templateLesson?.studentId || presetStudentId || recents[0]?.id || activeStudentList[0]?.id || "";
+    const selectedStudentId = selectableStudents.some(student => student.id === requestedStudentId) ? requestedStudentId : (activeStudentList[0]?.id || "");
     const defaultStudent = studentById(selectedStudentId);
-    const initialLessonType = lesson?.lessonType || templateLesson?.lessonType || (state.students.length ? "formal" : "trial");
+    const initialLessonType = lesson?.lessonType || templateLesson?.lessonType || (activeStudentList.length ? "formal" : "trial");
     const teacherDefaults = normalizeTeacherProfile(state.teacherProfile);
     const hasStudentLessonSettings = Boolean(latestLessonForStudent(selectedStudentId, lesson?.id));
     const copiedDate = templateLesson ? addDays(templateLesson.date, 7) : null;
@@ -3395,7 +3546,7 @@ textarea { min-height: 96px; resize: vertical; }
           : `<div class="field"><label>課程類型</label><div class="segmented"><label><input type="radio" name="lessonType" value="formal" ${initialLessonType === "formal" ? "checked" : ""}><span>正式課程</span></label><label><input type="radio" name="lessonType" value="trial" ${initialLessonType === "trial" ? "checked" : ""}><span>試教課程</span></label></div></div>`}
         <div id="formal-lesson-fields">
           ${editing ? "" : `<div class="field"><label>最近學生</label><div class="recent-student-row">${recents.map(s => `<button class="recent-student-chip ${s.id === selectedStudentId ? "active" : ""}" type="button" data-recent-student="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(s.subject)}</button>`).join("")}</div></div>`}
-          <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId"><option value="">請選擇學生</option>${state.students.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
+          <div class="field"><label for="lesson-student">學生 *</label><select id="lesson-student" name="studentId"><option value="">請選擇學生</option>${selectableStudents.map(s => `<option value="${s.id}" ${selectedStudentId === s.id ? "selected" : ""}>${escapeHtml(s.name)}｜${escapeHtml(s.subject)}</option>`).join("")}</select></div>
           ${editing ? "" : `<div id="last-lesson-template"></div>`}
         </div>
         <div id="trial-lesson-fields" class="form-grid">
@@ -3489,7 +3640,7 @@ textarea { min-height: 96px; resize: vertical; }
             const once = $('input[name="repeatType"][value="once"]', root);
             if (once) once.checked = true;
             if (!$("#lesson-subject", root).value.trim()) $("#lesson-subject", root).value = "試教";
-          } else if (!state.students.length) {
+          } else if (!activeStudentList.length) {
             $('[data-error="form"]', form).textContent = "請先新增正式學生，或改選試教課程";
           }
           updateSubjectOptions();
@@ -3901,7 +4052,7 @@ textarea { min-height: 96px; resize: vertical; }
     const tracker = notifications.creditBalanceReminders && typeof notifications.creditBalanceReminders === "object"
       ? notifications.creditBalanceReminders
       : (notifications.creditBalanceReminders = {});
-    const activeStudentIds = new Set(state.students.filter(student => !student.deletedAt && student.billingType === "package").map(student => student.id));
+    const activeStudentIds = new Set(activeStudents().filter(student => student.billingType === "package").map(student => student.id));
     let changed = false;
     const pending = [];
 
@@ -3912,7 +4063,7 @@ textarea { min-height: 96px; resize: vertical; }
       }
     }
 
-    for (const student of state.students.filter(item => !item.deletedAt && item.billingType === "package")) {
+    for (const student of activeStudents().filter(item => item.billingType === "package")) {
       const balance = calculateRemainingLessons(student);
       if (!Number.isFinite(balance)) continue;
       const previous = tracker[student.id] && typeof tracker[student.id] === "object" ? tracker[student.id] : null;
@@ -4263,6 +4414,15 @@ textarea { min-height: 96px; resize: vertical; }
     else if (action === "notify") requestNotificationPermission();
     else if (action === "add-student") studentForm();
     else if (action === "edit-student") studentForm(studentById(id));
+    else if (action === "view-archived-students") archivedStudentsSheet();
+    else if (action === "view-archived-student") { closeSheet(); ui.studentDetailId = id; ui.tab = "students"; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (action === "restore-student") restoreStudent(id);
+    else if (action === "delete-student") studentDeleteSheet(studentById(id));
+    else if (action === "archive-student") studentArchiveSheet(studentById(id));
+    else if (action === "archive-student-from-edit") { closeSheet(); studentArchiveSheet(studentById(id)); }
+    else if (action === "confirm-archive-student") archiveStudent(id, actionEl.dataset.refund === "true");
+    else if (action === "confirm-delete-empty-student") deleteStudent(id, false);
+    else if (action === "confirm-delete-student-future") deleteStudent(id, true);
     else if (action === "add-credit") creditSheet(studentById(id));
     else if (action === "edit-teacher") teacherProfileForm();
     else if (action === "deduction-policy") deductionPolicySheet();

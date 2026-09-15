@@ -1,5 +1,5 @@
 const CACHE_NAME = "xiaokebiao-pwa-v10";
-const PWA_VERSION = "0.8.2-inbox.1";
+const PWA_VERSION = "0.8.3-students.1";
 const PWA_RELEASE_NOTES = "新增鈴鐺通知中心；教學加入推播與手機安裝步驟。";
 const CACHE_PREFIX = "xiaokebiao-pwa-v";
 const META_CACHE_NAME = "xiaokebiao-pwa-meta";

@@ -1,19 +1,19 @@
-# 小課表 v0.8.2
+# 小課表 v0.8.3
 
-小課表是給個人老師使用的行動優先課表與堂數紀錄工具。v0.8.2 保留既有首頁、完整七天週視圖、月視圖與 Android 原生包裝層，新增固定系列管理、扣堂規則、課後修正與安全備份流程。
+小課表是給個人老師使用的行動優先課表與堂數紀錄工具。v0.8.3 保留既有首頁、完整七天週視圖、月視圖與 Android 原生包裝層，新增學生改名、封存、退費註記與安全刪除流程。
 
 ## 目前架構
 
 - Web／PWA：`index.html`、`app-domain.js`、`manifest.webmanifest`、`service-worker.js`
 - Android：`android/` 內的原生 WebView 包裝層，最低 Android 8（API 26）
 - 資料：保留原本 `localStorage` key `xiaokebiao_mvp_v1`
-- 集中資料版本：`dataVersion: 9`
+- 集中資料版本：`dataVersion: 10`
 - 部署：推送 `main` 後由 GitHub Actions 更新 GitHub Pages
 - Android Release：推送 `v*` tag 後建置簽章 APK；含 `-rc` 等後綴的 tag 發布為 Prerelease，正式 tag 發布為 Latest Release
 
 Web 版不需要 npm 才能使用；直接開啟 `index.html` 即可。本機檔案模式不支援 Service Worker，PWA 安裝與離線快取需使用 GitHub Pages HTTPS 網址。
 
-## v0.8.2 功能
+## v0.8.3 功能
 
 - 週視圖固定星期一開始並顯示完整七天；課程字級至少 9／10 px，依本週課程自動延伸 05:00～24:00，並保留完整當日清單
 - 課表可用學生、科目、狀態篩選；月視圖保留 42 格月曆
@@ -31,6 +31,7 @@ Web 版不需要 npm 才能使用；直接開啟 `index.html` 即可。本機檔
 - 首頁維持單一「今日課程」清單，不要求按「開始上課」或「記一堂」
 - 30、45、60、90、120、180 分鐘與 15～360 分鐘自訂時長，結束時間自動計算且禁止跨越午夜
 - 學生支援多科目、預設科目與跨科目搜尋
+- 學生姓名可直接修改且保留原 `studentId`；可封存、恢復或安全刪除學生與其未來課程
 - 月視圖直接顯示每日有效課程堂數；取消與已改期原紀錄不計入
 - 單堂、這堂與之後、整個固定系列的改期範圍，並保留改期歷程
 - 試教課程與轉正式學生流程
@@ -110,20 +111,20 @@ Repository secrets：
 
 `ANDROID_KEYSTORE_BASE64` 是 release keystore 的 Base64 內容。請另外離線備份原始 keystore 與密碼；遺失後將無法用相同簽章覆蓋更新既有 App。
 
-每一個可能安裝到手機的 APK 都必須使用新的、更高 `XIAOKEBIAO_VERSION_CODE`。公開測試版 `v0.7.0-rc.1` 使用 `7000`，正式 `v0.7.0` 使用 `7001`，v0.8.1 使用 `8001`，v0.8.2 使用 `8002`；之後發布前需先在 `android/gradle.properties` 遞增此值。
+每一個可能安裝到手機的 APK 都必須使用新的、更高 `XIAOKEBIAO_VERSION_CODE`。公開測試版 `v0.7.0-rc.1` 使用 `7000`，正式 `v0.7.0` 使用 `7001`，v0.8.1 使用 `8001`，v0.8.2 使用 `8002`，v0.8.3 使用 `8003`；之後發布前需先在 `android/gradle.properties` 遞增此值。
 
 建立並推送版本 tag：
 
 ```bash
-git tag v0.8.2
-git push origin v0.8.2
+git tag v0.8.3
+git push origin v0.8.3
 ```
 
 工作流程會產生：
 
 ```text
-xiaokebiao-v0.8.2-release.apk
-xiaokebiao-v0.8.2-release.apk.sha256
+xiaokebiao-v0.8.3-release.apk
+xiaokebiao-v0.8.3-release.apk.sha256
 ```
 
 並建立非 draft、非 prerelease 的正式 GitHub Release。App 只接受名稱含 `release` 的 `.apk`，會排除 debug、unsigned、test、source 與 AAB。
