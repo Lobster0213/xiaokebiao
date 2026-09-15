@@ -30,10 +30,10 @@ function legacyData() {
   };
 }
 
-test("legacy data migrates idempotently to v0.8.2 without changing the storage key model", () => {
+test("legacy data migrates idempotently to v0.8.3 without changing the storage key model", () => {
   const first = domain.normalizeData(legacyData(), { now: "2026-07-31T00:00:00.000Z" });
   assert.equal(first.dataVersion, 10);
-  assert.equal(first.version, "0.8.2");
+  assert.equal(first.version, "0.8.3");
   assert.equal(first.lessons[0].lessonType, "formal");
   assert.equal(first.lessons[0].deletedAt, null);
   assert.deepEqual(first.students[0].subjects, ["數學"]);
@@ -624,7 +624,7 @@ test("recent correction records system and teacher history and reconciles credit
 
 function studentManagementData() {
   return domain.normalizeData({
-    version: "0.8.2",
+    version: "0.8.3",
     teacherProfile: { name: "林老師", subjects: ["鋼琴"] },
     students: [
       {

@@ -41,7 +41,7 @@ const checks = [
   [workflow.includes("ANDROID_KEYSTORE_BASE64"), "release signing secrets"],
   [workflow.includes("xiaokebiao-v${VERSION_NAME}-release.apk"), "release-only APK name"],
   [workflow.includes("--prerelease"), "prerelease tag handling"],
-  [gradleProperties.includes("XIAOKEBIAO_VERSION_CODE=8002"), "v0.8.2 versionCode"],
+  [gradleProperties.includes("XIAOKEBIAO_VERSION_CODE=8003"), "v0.8.3 versionCode"],
   [java.includes("showCreditReminder"), "daily credit reminder bridge"],
   [java.includes("completedUpdateVersion"), "completed update notification-center handoff"],
   [java.includes("acknowledgeCompletedUpdate"), "completed update acknowledgement bridge"],
