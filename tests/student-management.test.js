@@ -14,6 +14,8 @@ test("student editor validates and updates the existing student identity", () =>
   assert.match(html, /toast\(editing \? "學生資料已更新"/);
   assert.doesNotMatch(html, /lesson\.studentName/);
   assert.match(html, /return studentById\(lesson\.studentId\)/);
+  assert.doesNotMatch(html, /全部科目：/);
+  assert.doesNotMatch(html, /；預設：/);
 });
 
 test("archived and deleted students are excluded from active selectors", () => {
@@ -24,6 +26,9 @@ test("archived and deleted students are excluded from active selectors", () => {
   assert.match(html, /查看封存學生/);
   assert.match(html, /查看歷史課程/);
   assert.match(html, /恢復學生/);
+  assert.match(html, /學生已封存，\$\{result\.removedLessonCount\} 堂未來課程已移除/);
+  assert.match(html, /handler: \(\) => undoStudentArchive\(result\.operation\.id, studentId\)/);
+  assert.match(domainSource, /reason: "studentArchived"/);
 });
 
 test("student deletion stays soft, reports impact and offers an eight-second exact undo", () => {

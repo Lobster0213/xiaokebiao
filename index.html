@@ -2071,7 +2071,6 @@ textarea { min-height: 96px; resize: vertical; }
       <section class="detail-hero">
         <div class="detail-title"><div class="avatar">${escapeHtml(initials(student.name))}</div><div><h1>${escapeHtml(student.name)}</h1><div class="lesson-meta">${escapeHtml(studentSubjectSummary(student))}${student.phone ? ` · ${escapeHtml(student.phone)}` : ""}</div></div></div>
         ${student.archivedAt ? `<div class="warning" style="margin-top:12px">此學生已封存，歷史課程與堂數紀錄仍保留。</div>` : ""}
-        <p class="subject-summary" style="margin:12px 2px 0">全部科目：${escapeHtml((student.subjects || [student.subject]).join("、"))}；預設：${escapeHtml(student.defaultSubject || student.subject)}</p>
         <div class="detail-grid">
           <div class="info-cell"><small>剩餘可用堂數</small><strong>${remaining == null ? "按次計費" : remaining}</strong></div>
           <div class="info-cell"><small>未來已排堂數</small><strong>${futureLessons.length}</strong></div>
@@ -2123,15 +2122,31 @@ textarea { min-height: 96px; resize: vertical; }
 
   function archiveStudent(studentId) {
     try {
-      Domain.archiveStudent(state, { studentId, now: new Date().toISOString() });
+      const result = Domain.archiveStudent(state, { studentId, idFactory: uid, now: new Date().toISOString() });
       saveData();
       closeSheet();
       ui.studentDetailId = null;
       ui.tab = "students";
       render();
-      toast("學生已封存");
+      toast(`學生已封存，${result.removedLessonCount} 堂未來課程已移除`, "success", {
+        duration: 8000,
+        actions: [{ label: "復原", handler: () => undoStudentArchive(result.operation.id, studentId) }],
+      });
     } catch (error) {
       toast(error.message || "無法封存學生", "error");
+    }
+  }
+
+  function undoStudentArchive(batchOperationId, studentId) {
+    try {
+      Domain.undoBatchOperation(state, { batchOperationId, now: new Date().toISOString() });
+      saveData();
+      ui.studentDetailId = studentId;
+      ui.tab = "students";
+      render();
+      toast("學生與未來課程已復原");
+    } catch (error) {
+      toast(error.message || "無法復原封存", "error");
     }
   }
 

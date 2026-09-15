@@ -176,10 +176,11 @@ const renamed = await evaluate(`(() => {
     name: student.name,
     balance: data.lessonCreditTransactions.filter(item => item.studentId === student.id && !item.reversedAt).reduce((sum, item) => sum + Number(item.amount || 0), 0),
     lessons: data.lessons.filter(item => item.studentId === student.id).length,
-    transactions: data.lessonCreditTransactions.filter(item => item.studentId === student.id).length
+    transactions: data.lessonCreditTransactions.filter(item => item.studentId === student.id).length,
+    detailText: document.querySelector('.detail-hero')?.textContent || ''
   };
 })()`);
-if (renamed.detailName !== '王小華' || renamed.name !== '王小華' || renamed.studentId !== beforeRename.studentId || renamed.balance !== beforeRename.balance || renamed.lessons !== beforeRename.lessons || renamed.transactions !== beforeRename.transactions || !renamed.toast.includes('學生資料已更新')) {
+if (renamed.detailName !== '王小華' || renamed.name !== '王小華' || renamed.studentId !== beforeRename.studentId || renamed.balance !== beforeRename.balance || renamed.lessons !== beforeRename.lessons || renamed.transactions !== beforeRename.transactions || !renamed.toast.includes('學生資料已更新') || renamed.detailText.includes('全部科目：') || renamed.detailText.includes('預設：')) {
   throw new Error(`Student rename regression: ${JSON.stringify({ beforeRename, renamed })}`);
 }
 const studentDetailScreenshotPath = screenshotPath.replace(/\.png$/i, "-student-detail.png");
@@ -200,8 +201,21 @@ const deleteStudentScreenshotPath = screenshotPath.replace(/\.png$/i, "-delete-s
 const deleteStudentScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 fs.writeFileSync(deleteStudentScreenshotPath, Buffer.from(deleteStudentScreenshot.data, "base64"));
 await click('[data-action="archive-student"][data-id="stu_wang"]');
-const hiddenAfterArchive = await evaluate("!document.body.textContent.includes('王小華')");
-if (!hiddenAfterArchive) throw new Error('Archived student remained in the normal student list');
+const archivedState = await evaluate(`(() => {
+  const data = JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1'));
+  const student = data.students.find(item => item.id === 'stu_wang');
+  const futureLesson = data.lessons.find(item => item.id === 'lesson_demo_5');
+  return {
+    hiddenFromList: !document.body.textContent.includes('王小華'),
+    archived: Boolean(student.archivedAt),
+    futureLessonRemoved: Boolean(futureLesson.deletedAt),
+    balance: data.lessonCreditTransactions.filter(item => item.studentId === student.id && !item.reversedAt).reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    toast: document.querySelector('#toast-root')?.textContent || ''
+  };
+})()`);
+if (!archivedState.hiddenFromList || !archivedState.archived || !archivedState.futureLessonRemoved || archivedState.balance !== beforeRename.balance || !archivedState.toast.includes('1 堂未來課程已移除')) {
+  throw new Error(`Student archive behavior regression: ${JSON.stringify(archivedState)}`);
+}
 await evaluate("document.querySelector('#toast-root').innerHTML = ''");
 await click('[data-action="view-archived-students"]');
 const archiveSheet = await evaluate(`({
@@ -214,6 +228,14 @@ const archivedStudentScreenshotPath = screenshotPath.replace(/\.png$/i, "-archiv
 const archivedStudentScreenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 fs.writeFileSync(archivedStudentScreenshotPath, Buffer.from(archivedStudentScreenshot.data, "base64"));
 await click('[data-action="restore-student"][data-id="stu_wang"]');
+const restoredState = await evaluate(`(() => {
+  const data = JSON.parse(localStorage.getItem('xiaokebiao_mvp_v1'));
+  return {
+    archived: Boolean(data.students.find(item => item.id === 'stu_wang').archivedAt),
+    oldFutureLessonStillRemoved: Boolean(data.lessons.find(item => item.id === 'lesson_demo_5').deletedAt)
+  };
+})()`);
+if (restoredState.archived || !restoredState.oldFutureLessonStillRemoved) throw new Error(`Archived student restore regression: ${JSON.stringify(restoredState)}`);
 await click('[data-tab="home"]');
 const renamedOnHome = await evaluate("document.body.textContent.includes('王小華')");
 if (!renamedOnHome) throw new Error('Renamed student did not update on home');
@@ -301,5 +323,5 @@ fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
 fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
 
 if (runtimeErrors.length) throw new Error(`Browser runtime exceptions: ${runtimeErrors.join("; ")}`);
-console.log(JSON.stringify({ initial, home, notification, beforeRename, renamed, deleteSheet, archiveSheet, week, monthDays, monthCounts, renamedOnMonth, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
+console.log(JSON.stringify({ initial, home, notification, beforeRename, renamed, deleteSheet, archivedState, archiveSheet, restoredState, week, monthDays, monthCounts, renamedOnMonth, calculatedEnd, trialVisible, clearConfirmationGuard: true, runtimeErrors: 0 }, null, 2));
 socket.close();

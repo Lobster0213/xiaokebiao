@@ -785,6 +785,7 @@ test("a student without any relation is soft-deleted and restored within eight s
 
 test("students with history cannot be directly removed, while archive and restore retain history", () => {
   const data = studentManagementData();
+  const balanceBefore = domain.creditBalance(data, "student_target");
   const beforeCounts = {
     lessons: data.lessons.length,
     records: data.lessonRecords.length,
@@ -796,11 +797,47 @@ test("students with history cannot be directly removed, while archive and restor
     idFactory: () => "batch_forbidden",
     now: "2026-09-15T00:00:00.000Z",
   }), /封存或移除未來課程/);
-  domain.archiveStudent(data, { studentId: "student_target", now: "2026-09-15T00:00:00.000Z" });
+  const archived = domain.archiveStudent(data, {
+    studentId: "student_target",
+    idFactory: () => "batch_student_archive",
+    now: "2026-09-15T00:00:00.000Z",
+  });
+  assert.equal(archived.removedLessonCount, 1);
   assert.ok(data.students.find(item => item.id === "student_target").archivedAt);
+  assert.ok(data.lessons.find(item => item.id === "lesson_future_target").deletedAt);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_other").deletedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_completed").deletedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_cancelled_target").deletedAt, null);
+  assert.equal(domain.creditBalance(data, "student_target"), balanceBefore);
+  assert.equal(data.lessonRecords[0].deletedAt, null);
   assert.deepEqual([data.lessons.length, data.lessonRecords.length, data.lessonCreditTransactions.length], Object.values(beforeCounts));
+  const transactionCountBeforeAutoComplete = data.lessonCreditTransactions.length;
+  const completion = domain.autoCompleteOverdueLessons(data, {
+    idFactory: prefix => `${prefix}_archive_check`,
+    now: "2026-10-02T12:00:00.000Z",
+  });
+  assert.equal(completion.completed.some(item => item.lesson.id === "lesson_future_target"), false);
+  assert.equal(data.lessonCreditTransactions.length, transactionCountBeforeAutoComplete);
   domain.restoreArchivedStudent(data, { studentId: "student_target", now: "2026-09-15T00:01:00.000Z" });
   assert.equal(data.students.find(item => item.id === "student_target").archivedAt, null);
+  assert.ok(data.lessons.find(item => item.id === "lesson_future_target").deletedAt, "一般恢復不應重新排回舊課程");
+});
+
+test("an immediate archive undo restores the student and only that archive batch's future lessons", () => {
+  const data = studentManagementData();
+  const archived = domain.archiveStudent(data, {
+    studentId: "student_target",
+    idFactory: () => "batch_archive_undo",
+    now: "2026-09-15T00:00:00.000Z",
+  });
+  const undo = domain.undoBatchOperation(data, {
+    batchOperationId: archived.operation.id,
+    now: "2026-09-15T00:00:07.000Z",
+  });
+  assert.equal(undo.restoredStudentCount, 1);
+  assert.equal(data.students.find(item => item.id === "student_target").archivedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_target").deletedAt, null);
+  assert.equal(data.lessons.find(item => item.id === "lesson_future_other").deletedAt, null);
 });
 
 test("deleting a student removes only that student's future scheduled lessons and undo restores the exact batch", () => {

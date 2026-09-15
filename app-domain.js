@@ -12,7 +12,7 @@
   const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
   const CREDIT_TYPES = new Set(["purchase", "gift", "manualAdjustment", "deduction", "restoration", "refund"]);
   const LESSON_STATUSES = new Set(["scheduled", "inProgress", "completed", "studentLeave", "teacherLeave", "absent", "cancelled", "rescheduled", "skipped"]);
-  const BATCH_OPERATION_TYPES = new Set(["create", "delete", "edit", "skip", "add", "studentDelete"]);
+  const BATCH_OPERATION_TYPES = new Set(["create", "delete", "edit", "skip", "add", "studentDelete", "studentArchive"]);
   const TRIAL_RESULTS = new Set(["pending", "converted", "notContinuing", "followUp"]);
   const PRESET_DURATIONS = new Set([30, 45, 60, 90, 120, 180]);
 
@@ -269,6 +269,9 @@
         isDemoData: Boolean(student.isDemoData),
         archivedAt: student.archivedAt ? text(student.archivedAt, 50) : null,
         deletedAt: student.deletedAt ? text(student.deletedAt, 50) : null,
+        archiveBatchOperationId: student.archiveBatchOperationId && SAFE_ID.test(String(student.archiveBatchOperationId))
+          ? String(student.archiveBatchOperationId)
+          : null,
         deletionBatchOperationId: student.deletionBatchOperationId && SAFE_ID.test(String(student.deletionBatchOperationId))
           ? String(student.deletionBatchOperationId)
           : null,
@@ -619,10 +622,38 @@
   function archiveStudent(data, options) {
     const student = (data.students || []).find(item => item.id === options.studentId && !item.deletedAt);
     if (!student) throw new Error("找不到學生");
+    if (student.archivedAt) throw new Error("學生已封存");
     const now = options.now || new Date().toISOString();
+    const idFactory = requireIdFactory(options);
+    const summary = studentRelationSummary(data, student.id, { now });
+    const targets = summary.futureLessons;
+    const operation = createBatchOperation(data, {
+      ...options,
+      type: "studentArchive",
+      affectedLessonIds: targets.map(lesson => lesson.id),
+      affectedStudentIds: [student.id],
+      before: {
+        students: [clone(student)],
+        lessons: targets.map(lesson => clone(lesson)),
+      },
+      now,
+      idFactory,
+    });
     student.archivedAt = now;
+    student.archiveBatchOperationId = operation.id;
     student.updatedAt = now;
-    return student;
+    for (const lesson of targets) {
+      lesson.deletedAt = now;
+      lesson.updatedAt = now;
+      lesson.deletion = {
+        creditRestored: false,
+        restorationTransactionId: null,
+        deletedAt: now,
+        batchOperationId: operation.id,
+        reason: "studentArchived",
+      };
+    }
+    return { operation, student, removedLessonCount: targets.length };
   }
 
   function restoreArchivedStudent(data, options) {
@@ -630,6 +661,7 @@
     if (!student) throw new Error("找不到學生");
     const now = options.now || new Date().toISOString();
     student.archivedAt = null;
+    student.archiveBatchOperationId = null;
     student.updatedAt = now;
     return student;
   }
@@ -1322,7 +1354,27 @@
     const now = options.now || new Date().toISOString();
     if (new Date(now).getTime() > new Date(operation.undoUntil).getTime()) throw new Error("復原期限已過");
     let restoredStudentCount = 0;
-    if (operation.type === "studentDelete") {
+    if (operation.type === "studentArchive") {
+      const beforeStudents = new Map((operation.before?.students || []).map(item => [item.id, clone(item)]));
+      for (const studentId of operation.affectedStudentIds || []) {
+        const student = (data.students || []).find(item => item.id === studentId);
+        if (!student?.archivedAt || student.archiveBatchOperationId !== operation.id) continue;
+        const beforeStudent = beforeStudents.get(studentId);
+        student.archivedAt = beforeStudent?.archivedAt || null;
+        student.archiveBatchOperationId = beforeStudent?.archiveBatchOperationId || null;
+        student.updatedAt = now;
+        restoredStudentCount += 1;
+      }
+      const beforeLessons = new Map((operation.before?.lessons || []).map(item => [item.id, clone(item)]));
+      for (const lessonId of operation.affectedLessonIds) {
+        const lesson = (data.lessons || []).find(item => item.id === lessonId);
+        if (!lesson?.deletedAt || lesson.deletion?.batchOperationId !== operation.id) continue;
+        const beforeLesson = beforeLessons.get(lessonId);
+        lesson.deletedAt = beforeLesson?.deletedAt || null;
+        lesson.deletion = beforeLesson?.deletion || null;
+        lesson.updatedAt = now;
+      }
+    } else if (operation.type === "studentDelete") {
       const beforeStudents = new Map((operation.before?.students || []).map(item => [item.id, clone(item)]));
       for (const studentId of operation.affectedStudentIds || []) {
         const student = (data.students || []).find(item => item.id === studentId);
@@ -1368,7 +1420,7 @@
       }
     }
     operation.undoneAt = now;
-    if (operation.type !== "studentDelete") {
+    if (!["studentDelete", "studentArchive"].includes(operation.type)) {
       const studentIds = new Set((data.lessons || []).filter(item => operation.affectedLessonIds.includes(item.id)).map(item => item.studentId));
       studentIds.forEach(studentId => syncStudentUsedLessons(data, studentId));
     }
